@@ -86,6 +86,10 @@ InitGraphics (
 {
   EFI_STATUS                    Status;
   EFI_GRAPHICS_OUTPUT_PROTOCOL  *GraphicsOutput;
+  EFI_GRAPHICS_OUTPUT_MODE_INFORMATION *Info;
+  UINT32                               MaxModes;
+  UINTN                                InfoSizeof;
+  UINT32                               CurrentMode;
 
   ASSERT (LoaderParams != NULL);
 
@@ -113,6 +117,30 @@ InitGraphics (
   //
   // Hint: Use QueryMode/SetMode functions.
   //
+  MaxModes = GraphicsOutput->Mode ? GraphicsOutput->Mode->MaxMode : 0;
+  CurrentMode = GraphicsOutput->Mode ? GraphicsOutput->Mode->Mode : 0;
+
+  for (UINT32 i = 0; i < MaxModes; i++) {
+    Status = GraphicsOutput->QueryMode(GraphicsOutput, i, &InfoSizeof, &Info);
+    DEBUG((DEBUG_INFO,  "JOS: mode: %03d; width: %d; height: %d\n",
+           i, Info->HorizontalResolution, Info->VerticalResolution));
+  }
+  // 022 - 1920x1080
+  CurrentMode = 22;
+
+  GraphicsOutput->SetMode(GraphicsOutput, CurrentMode);
+  if(EFI_ERROR(Status)) {
+    DEBUG((DEBUG_ERROR,  "Unable to set mode %03d", CurrentMode));
+    return Status;
+  } else {
+    DEBUG((DEBUG_INFO,  "Current configuration: %x size %d, width %d height %d pixels/line %d\n",
+      GraphicsOutput->Mode->FrameBufferBase,
+      GraphicsOutput->Mode->FrameBufferSize,
+      GraphicsOutput->Mode->Info->HorizontalResolution,
+      GraphicsOutput->Mode->Info->VerticalResolution,
+      GraphicsOutput->Mode->Info->PixelsPerScanLine
+    ));
+  }
 
   //
   // Fill screen with black.
@@ -274,8 +302,11 @@ GetKernelFile (
   // (use gEfiLoadedImageProtocolGuid) from gImageHandle to
   // get loader's containing device.
   //
-  // LAB 1: Your code here
-  (void)LoadedImage;
+
+  // получили информацию о загруженном изображении
+  // (информации о девайсе загрузчика).
+  Status = gBS->HandleProtocol(gImageHandle, &gEfiLoadedImageProtocolGuid,
+                               (VOID **) &LoadedImage);
 
   if (EFI_ERROR (Status)) {
     DEBUG ((DEBUG_ERROR, "JOS: Cannot find LoadedImage protocol - %r\n", Status));
@@ -292,8 +323,11 @@ GetKernelFile (
   // (use gEfiSimpleFileSystemProtocolGuid) from LoadedImage->DeviceHandle
   // to read the kernel from it later.
   //
-  // LAB 1: Your code here
-  (void)FileSystem;
+
+  // нашли FILE_SYSTEM_PROTOCOL через использование его GUID, 
+  // для того, чтобы прочитать ядро из него позднее.
+  Status = gBS->HandleProtocol(LoadedImage->DeviceHandle, &gEfiSimpleFileSystemProtocolGuid,
+                               (VOID **) &FileSystem);
 
   if (EFI_ERROR (Status)) {
     DEBUG ((DEBUG_ERROR, "JOS: Cannot find own FileSystem protocol - %r\n", Status));
@@ -304,9 +338,10 @@ GetKernelFile (
   // Use FileSystem->OpenVolume() to open root directory, in which kernel is stored
   // NOTE: Don't forget to Use ->Close after you've done using it.
   //
-  // LAB 1: Your code here
-  (void)CurrentDriveRoot;
 
+  // Получаем базовый доступ к устройству, через открытие раздела.
+  // Интерфейс чтения файла из раздела будет обеспечиваться ч/з CurrentDriveRoot 
+  Status = FileSystem->OpenVolume(FileSystem, &CurrentDriveRoot);
   if (EFI_ERROR (Status)) {
     DEBUG ((DEBUG_ERROR, "JOS: Cannot access own file system - %r\n", Status));
     return Status;
@@ -317,10 +352,22 @@ GetKernelFile (
   // for reading (as EFI_FILE_MODE_READ)
   //
   // LAB 1: Your code here
-  KernelFile = NULL;
+
+  // чтение файла ядра, находящегося по пути KERNEL_PATH
+  // атрибуты здесь не имеют значения. Результат сохраняем в указатель на
+  // файл ядра.
+  Status = CurrentDriveRoot->Open(CurrentDriveRoot, &KernelFile, KERNEL_PATH,
+                                  EFI_FILE_MODE_READ, 0);
 
   if (EFI_ERROR (Status)) {
     DEBUG ((DEBUG_ERROR, "JOS: Cannot access own file system - %r\n", Status));
+    return Status;
+  }
+
+  Status = CurrentDriveRoot->Close(CurrentDriveRoot);
+
+  if (EFI_ERROR (Status)) {
+    DEBUG ((DEBUG_ERROR, "JOS: Cannot close device volume - %r\n", Status));
     return Status;
   }
 
@@ -987,7 +1034,7 @@ UefiMain (
   UINTN              EntryPoint;
   VOID               *GateData;
 
-#if 1 ///< Uncomment to await debugging
+#if 0 ///< Uncomment to await debugging
   volatile BOOLEAN   Connected;
   DEBUG ((DEBUG_INFO, "JOS: Awaiting debugger connection\n"));
 
