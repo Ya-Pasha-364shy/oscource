@@ -57,10 +57,31 @@ mon_kerninfo(int argc, char **argv, struct Trapframe *tf) {
     return 0;
 }
 
+struct stackframe {
+    struct stackframe* rbp;
+    uint64_t rip;
+};
+
 int
 mon_backtrace(int argc, char **argv, struct Trapframe *tf) {
     // LAB 2: Your code here
+    struct stackframe* rbp_pointer = (struct stackframe*)read_rbp();
+    cprintf("Stack backtrace:\n");
 
+    while (rbp_pointer) {
+        struct Ripdebuginfo debug_info;
+        uint64_t* rip_pointer = (uint64_t *)rbp_pointer->rip;
+        // указатель на следующую инструкцию после вызова функции
+        if (0 == debuginfo_rip((uint64_t)rip_pointer, &debug_info)) {
+            cprintf("  rbp 000000%lx  rip 000000%lx\n", (uint64_t)rbp_pointer, (uint64_t)rip_pointer);
+            cprintf("    %s:%d: %s+%ld\n", debug_info.rip_file,
+                                           debug_info.rip_line, debug_info.rip_fn_name,
+                                           (uint64_t)rip_pointer - debug_info.rip_fn_addr - 5);
+        } else {
+            cprintf("    Information not available...\n");
+        }
+        rbp_pointer = rbp_pointer->rbp;
+    }
     return 0;
 }
 
