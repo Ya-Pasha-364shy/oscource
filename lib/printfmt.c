@@ -19,6 +19,7 @@
  */
 
 static const char *const error_string[MAXERROR] = {
+        [E_NO_ERROR] = "no error",
         [E_UNSPECIFIED] = "unspecified error",
         [E_BAD_ENV] = "bad environment",
         [E_INVAL] = "invalid parameter",

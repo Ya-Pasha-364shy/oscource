@@ -91,8 +91,10 @@ i386_init(void) {
 
     early_boot_pml4_init();
 
-    /* Initialize the console.
+    /* Initialize the console devices.
      * Can't call cprintf until after we do this! */
+    // Настройка COM-портов по скорости, установки битов,
+    // включение прерываний.
     cons_init();
 
     if (trace_init) {
@@ -105,6 +107,8 @@ i386_init(void) {
     if (trace_init) cprintf("Framebuffer initialised\n");
 
     /* User environment initialization functions */
+    // инициализует все структуры в массиве envs, настраивает оборудование,
+    // для работы уровней привелегий 0 (ядро) и 3 (пользователь). 
     env_init();
 
 #ifdef CONFIG_KSPACE

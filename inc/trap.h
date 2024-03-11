@@ -83,6 +83,7 @@ struct Trapframe {
     uint32_t tf_padding6;
     uint64_t tf_rflags;
     /* Below here only when crossing rings, such as from user to kernel */
+    // указатель на стек. Для каждого процесса существует уникальное значение адреса.
     uintptr_t tf_rsp;
     uint16_t tf_ss;
     uint16_t tf_padding7;

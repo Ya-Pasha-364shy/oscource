@@ -15,7 +15,7 @@
 #include <kern/traceopt.h>
 
 /* Currently active environment */
-struct Env *curenv = NULL;
+struct Env *curenv = NULL; // Указатель на текущий процесс
 
 #ifdef CONFIG_KSPACE
 /* All environments */
@@ -23,11 +23,13 @@ struct Env env_array[NENV];
 struct Env *envs = env_array;
 #else
 /* All environments */
-struct Env *envs = NULL;
+struct Env *envs = NULL; // Массив всех процессов, используемых и свободных
 #endif
 
 /* Free environment list
  * (linked by Env->env_link) */
+// Список свободных процессов; Сущности процессов в виде структурок указывают друг на дружку
+// по умолчанию NULL
 static struct Env *env_free_list;
 
 
@@ -85,10 +87,21 @@ envid2env(envid_t envid, struct Env **env_store, bool need_check_perm) {
  */
 void
 env_init(void) {
-
     /* Set up envs array */
-
     // LAB 3: Your code here
+
+    envs->env_id = 0;
+    envs->env_status = ENV_FREE;
+    env_free_list = envs;
+
+    struct Env *next = env_free_list;
+    for (unsigned int i = 1; i < NENV; ++i) {
+        envs[i].env_id = 0;
+        envs[i].env_status = ENV_FREE;
+
+        next->env_link = envs + i;
+        next = envs + i;
+    }
 }
 
 /* Allocates and initializes a new environment.
@@ -145,7 +158,9 @@ env_alloc(struct Env **newenv_store, envid_t parent_id, enum EnvType type) {
     env->env_tf.tf_cs = GD_KT;
 
     // LAB 3: Your code here:
-    // static uintptr_t stack_top = 0x2000000;
+    static uintptr_t stack_top = 0x2000000;
+    // задаём уникальный адрес стека для процесса
+    env->env_tf.tf_rsp = stack_top - (env - envs) * (2 * PAGE_SIZE);
 #else
     env->env_tf.tf_ds = GD_UD | 3;
     env->env_tf.tf_es = GD_UD | 3;
@@ -158,9 +173,24 @@ env_alloc(struct Env **newenv_store, envid_t parent_id, enum EnvType type) {
     env_free_list = env->env_link;
     *newenv_store = env;
 
-    if (trace_envs) cprintf("[%08x] new env %08x\n", curenv ? curenv->env_id : 0, env->env_id);
+    if (trace_envs)
+        cprintf("[%08x] new env %08x\n", curenv ? curenv->env_id : 0, env->env_id);
     return 0;
 }
+
+static int
+find_section(struct Secthdr *sc_hdr_tbl, char *sc_tbl_names, int sc_num, uint32_t type, const char *sc_name) {
+    struct Secthdr *section_hdr = NULL;
+
+    for (int i = 0; i < sc_num; i++) {
+        section_hdr = sc_hdr_tbl + i;
+        if (section_hdr->sh_type == type && !strcmp(sc_tbl_names + section_hdr->sh_name, sc_name)) {
+            return i;
+        }
+    }
+    return -1;
+}
+
 
 /* Pass the original ELF image to binary/size and bind all the symbols within
  * its loaded address space specified by image_start/image_end.
@@ -171,7 +201,66 @@ static int
 bind_functions(struct Env *env, uint8_t *binary, size_t size, uintptr_t image_start, uintptr_t image_end) {
     // LAB 3: Your code here:
 
-    /* NOTE: find_function from kdebug.c should be used */
+    /** @brief #рассуждения
+     * то есть у нас есть бинарь, есть процесс, у бинаря есть таблица символов (objdump -X elf)
+     * нам нужно в глобальные указатели на функции записать адреса
+     * одноименных функций ядра.
+     * 
+     * Для этого необходимо получить адреса глобальных переменных бинаря
+     * с конкретными названиями. ОК - пройдёмся по бинарю, по таблице символов.
+     * 
+     * Для каждого элемента из таблицы символов смотреть есть ли такая функция 
+     * в ядре (посредстовом find_function из kern/kdebug.c).
+     * Если да, то положить в указатель адрес функции. 
+    */
+    struct Elf *_binary = (struct Elf *)binary;
+    if (_binary->e_magic != ELF_MAGIC ||
+        _binary->e_shentsize != sizeof(struct Secthdr)) {
+        return -E_INVALID_EXE;
+    }
+
+    // получаем доступ до таблицы секций
+    struct Secthdr *section_headers_table = (struct Secthdr *)(binary + _binary->e_shoff);
+    // получаем доступ до таблицы строк с названиями секций
+    char *section_names_string_table = (char *)(binary + section_headers_table[_binary->e_shstrndx].sh_offset);
+
+    // индекс раздела (секции) ".strtab" - индекс таблицы строк (имена глоб. функций, переменных
+    // в таблице заголовков.
+    int strtab_section_idx = find_section(section_headers_table, section_names_string_table,
+                                          _binary->e_shnum, ELF_SHT_STRTAB, ".strtab");
+    if (strtab_section_idx == -1) {
+        panic("cannot find '.strtab' section!\n");
+    }
+    // индекс раздела (секции) ".symtab" - индекс таблицы символов в таблице заголовков.
+    int symtab_section_idx = find_section(section_headers_table, section_names_string_table,
+                                          _binary->e_shnum, ELF_SHT_SYMTAB, ".symtab");
+    if (symtab_section_idx == -1) {
+        panic("cannot find '.symtab' section!\n");
+    }
+    // зачем нужна таблица символов, если есть таблица строк ?
+    // потому что без таблицы символов, мы не найдём в таблице строк название функции, потому что в таблице символов
+    // по спецификации лежат индексы к таблице строк, например
+
+    // получаем содержимое ".strtab"
+    char *names = (char *)(binary + section_headers_table[strtab_section_idx].sh_offset);
+    // получаем содержимой ".strsym"
+    struct Elf64_Sym* symbols = (struct Elf64_Sym *)(binary + section_headers_table[symtab_section_idx].sh_offset);
+    size_t symbols_num = section_headers_table[symtab_section_idx].sh_size / sizeof(struct Elf64_Sym);
+
+    for (size_t symbol_num = 0; symbol_num < symbols_num; symbol_num++) {
+        if (ELF64_ST_BIND(symbols[symbol_num].st_info) == STB_GLOBAL &&
+            ELF64_ST_TYPE(symbols[symbol_num].st_info) == STT_OBJECT &&
+            symbols[symbol_num].st_size == sizeof(void *)) {
+
+            const char *name = names + symbols[symbol_num].st_name;
+            uintptr_t function_address = find_function(name);
+            if (function_address &&
+                symbols[symbol_num].st_value >= image_start &&
+                symbols[symbol_num].st_value <= image_end) {
+                memcpy((void *)symbols[symbol_num].st_value, &function_address, sizeof(void *));
+            }
+        }
+    }
 
     return 0;
 }
@@ -189,13 +278,14 @@ bind_functions(struct Env *env, uint8_t *binary, size_t size, uintptr_t image_st
  * but not actually present in the ELF file - i.e., the program's bss section.
  *
  * All this is very similar to what our boot loader does, except the boot
- * loader also needs to read the code from disk.  Take a look at
+ * loader also needs to read the code from disk. Take a look at
  * LoaderPkg/Loader/Bootloader.c to get ideas.
  *
  * Finally, this function maps one page for the program's initial stack.
  *
  * load_icode returns -E_INVALID_EXE if it encounters problems.
- *  - How might load_icode fail?  What might be wrong with the given input?
+ *  - How might load_icode fail ? 
+ *  - What might be wrong with the given input ?
  *
  * Hints:
  *   Load each program segment into memory
@@ -219,7 +309,35 @@ bind_functions(struct Env *env, uint8_t *binary, size_t size, uintptr_t image_st
 static int
 load_icode(struct Env *env, uint8_t *binary, size_t size) {
     // LAB 3: Your code here
-
+    struct Elf *elf = (struct Elf *)binary;
+    /* должно быть ELF_MAGIC == ".ELF" */
+    if (elf->e_magic == ELF_MAGIC) { 
+        // число заголовков программы
+        int i = 0;
+        int phnum = elf->e_phnum;
+        // ph - содержит адрес таблицы заголовков программы
+        struct Proghdr *phs = (struct Proghdr *)(binary + elf->e_phoff);
+        if (phs == 0) {
+            return -E_INVALID_EXE;
+        }
+        for (; i < phnum; ++i) {
+            // загружаем только те сегменты, что могут быть загружены -- .text (cs), .data (ds), ...
+            if ((phs + i)->p_type == ELF_PROG_LOAD) {
+                // загружаем адрес очередного сегмента
+                memcpy((void *)phs[i].p_va, binary + phs[i].p_offset, phs[i].p_filesz);
+                // зануляем всё, что идёт после сегмента
+                memset((void *)phs[i].p_va + phs[i].p_filesz, 0, phs[i].p_memsz - phs[i].p_filesz);
+            }
+        }
+        // загружаем точку входа в ELF-файл (для его исполнения).
+        // e_entry - куда система передаст управление, таким образом запуская процесс
+        // env->env_tf - должны лежать сохранённые регистры для безопасного 
+        //               переключения между процессами. 
+        env->env_tf.tf_rip = elf->e_entry;
+        // выполняем связывание, чтобы они пользовательские программы могли использовать
+        // функции ядра
+        bind_functions(env, binary, size, elf->e_entry, elf->e_entry + size);
+    }
     return 0;
 }
 
@@ -232,15 +350,25 @@ load_icode(struct Env *env, uint8_t *binary, size_t size) {
 void
 env_create(uint8_t *binary, size_t size, enum EnvType type) {
     // LAB 3: Your code here
+    struct Env *new;
+    // создали новый процесс, точнее, взяли свободный из свободных,
+    // проинициализировали его поля, задали нач. значения регистрам.
+    if (env_alloc(&new, 0, type) < 0) {
+        panic("Can't allocate new environment\n");
+    }
+    // связываем бинарь с процессом, который будет его выполнять
+    if (0 != load_icode(new, binary, size)) {
+        panic("Can't load and bind process with binary\n");
+    }
 }
-
 
 /* Frees env and all memory it uses */
 void
 env_free(struct Env *env) {
 
     /* Note the environment's demise. */
-    if (trace_envs) cprintf("[%08x] free env %08x\n", curenv ? curenv->env_id : 0, env->env_id);
+    if (trace_envs)
+        cprintf("[%08x] free env %08x\n", curenv ? curenv->env_id : 0, env->env_id);
 
     /* Return the environment to the free list */
     env->env_status = ENV_FREE;
@@ -260,6 +388,11 @@ env_destroy(struct Env *env) {
      * it traps to the kernel. */
 
     // LAB 3: Your code here
+    env->env_status = ENV_DYING;
+    env_free(env);
+    if (curenv == env) {
+        sched_yield();
+    }
 }
 
 #ifdef CONFIG_KSPACE
@@ -281,7 +414,6 @@ csys_yield(struct Trapframe *tf) {
  *
  * This function does not return.
  */
-
 _Noreturn void
 env_pop_tf(struct Trapframe *tf) {
 
@@ -352,6 +484,13 @@ env_run(struct Env *env) {
 
     // LAB 3: Your code here
 
-    while (1)
-        ;
+    if (curenv && curenv->env_status == ENV_RUNNING) {
+        curenv->env_status = ENV_RUNNABLE;
+    }
+
+    curenv = env;
+    curenv->env_status = ENV_RUNNING;
+    curenv->env_runs++;
+
+    env_pop_tf(&curenv->env_tf);
 }

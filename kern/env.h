@@ -7,9 +7,9 @@
 
 #define NCPU 1
 
-/* All environments */
+/* все процессы, как занятые, так и свободные */
 extern struct Env *envs;
-/* Currently active environment */
+// текущий активный процесс
 extern struct Env *curenv;
 extern struct Segdesc32 gdt[];
 

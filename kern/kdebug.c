@@ -100,6 +100,19 @@ find_function(const char *const fname) {
      * in assembly. */
 
     // LAB 3: Your code here:
+    if (!strncmp(fname, "sys_exit", 9)) {
+        return (uintptr_t)sys_exit;
+    }
+    if (!strncmp(fname, "sys_yield", 10)) {
+        return (uintptr_t)sys_yield;
+    }
+    uintptr_t offset = 0;
+    struct Dwarf_Addrs address;
+    load_kernel_dwarf_info(&address);
 
+    if (address_by_fname(&address, fname, &offset) == 0 ||
+        naive_address_by_fname(&address, fname, &offset) == 0) {
+        return offset;
+    }
     return 0;
 }

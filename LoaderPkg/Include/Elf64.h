@@ -14,30 +14,86 @@ struct Elf {
   UINT16 e_type;
   UINT16 e_machine;
   UINT32 e_version;
+  /**
+   * This member gives the virtual address to which the system first transfers control,
+   * thus starting the process. If the file has no associated entry point,
+   * this member holds zero.
+  */
   UINT64 e_entry;
+  /**
+   * This member holds the program header table's (таблица сегментов) file offset in bytes.
+   * If the file has no program header table, this member holds zero.
+   * https://github.com/compilepeace/BINARY_DISSECTION_COURSE/blob/master/ELF/PROGRAM_HEADER_TABLE/PHT.md
+  */
   UINT64 e_phoff;
+  /**
+   * This member holds the section header table's (таблица секций) file offset in bytes.
+   * If the file has no section header table, this member holds zero.
+  */
   UINT64 e_shoff;
   UINT32 e_flags;
   UINT16 e_ehsize;
   UINT16 e_phentsize;
   UINT16 e_phnum;
+  /**
+   * This member holds a section header's size in bytes.
+   * A section header is one entry in the section header table;
+   * all entries are the same size.
+  */
   UINT16 e_shentsize;
+  /**
+   * This member holds the number
+   * of entries in the section header table.
+  */
   UINT16 e_shnum;
+  /**
+   * This member holds the section header table
+   * index of the entry associated with the
+   * section name string table.
+   * If the file has no section name string table,
+   * this member holds the value SHN_UNDEF.
+  */
   UINT16 e_shstrndx;
 };
 
+/* это элемент таблицы заголовков (сегментов) - для каждого сегмента - своя таблица */
 struct Proghdr {
+  /**
+   * kind of segment this array element describes or how to
+   * interpret the array element's information 
+  */
   UINT32 p_type;
+  /**
+   * flags relevant to the segment
+  */
   UINT32 p_flags;
+  /**
+   * Дает смещение от начала файла, в
+   * котором находится первый байт сегмента.
+  */
   UINT64 p_offset;
+  /**
+   * Этот член дает виртуальный адрес,
+   * по которому в памяти находится первый байт сегмента.
+  */
   UINT64 p_va;
+  /**
+   * В системах, для которых важна физическая адресация,
+   * этот член зарезервирован для физического адреса сегмента.
+   * Этому участнику требуется информация, специфичная для операционной системы.
+  */
   UINT64 p_pa;
   UINT64 p_filesz;
   UINT64 p_memsz;
   UINT64 p_align;
 };
 
+/* это элемент таблицы разделов (или секций .text, .data, .debug_info, - для каждой секции, своя таблица)*/
 struct Secthdr {
+  /**
+   * This member specifies the name of the section.
+   * Its value is an index into the "section header string table (strtab)" section
+  */
   UINT32 sh_name;
   UINT32 sh_type;
   UINT64 sh_flags;
@@ -50,7 +106,12 @@ struct Secthdr {
   UINT64 sh_entsize;
 };
 
+/* это элемент таблица символов */
 struct Elf64_Sym {
+  /**
+   * This member holds an index into the object file's symbol string table, which holds
+   * the character representations of the symbol names.
+  */
   UINT32            st_name;
   UINT8             st_info;
   UINT8             st_other;
