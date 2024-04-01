@@ -31,14 +31,26 @@ extern struct Timer *timer_for_schedule;
 #pragma pack(push, 1)
 
 typedef struct {
+    // This 8-byte string (not null terminated!) must contain "RSD PTR". It stands on a 16-byte boundary. 
     char Signature[8];
+    // The value to add to all the other bytes (of the Version 1.0 table) to calculate the Checksum of the table.
+    // If this value added to all the others and casted to byte isn't equal to 0, the table must be ignored. 
     uint8_t Checksum;
+    // The specification says: "An OEM-supplied string that identifies the OEM". 
     char OEMID[6];
+    // The revision of the ACPI. 
     uint8_t Revision;
+    // 32-bit physical (I repeat: physical) address of the RSDT table
     uint32_t RsdtAddress;
+    // The size of the entire table since offset 0 to the end. 
     uint32_t Length;
+    // 64-bit physical address of the XSDT table.
+    // If you detect ACPI Version 2.0 (another revision)
+    // you should use this table instead of RSDT even on IA-32, casting the address to uint32_t. 
     uint64_t XsdtAddress;
+    // This field is used to calculate the checksum of the entire table, including both checksum fields. 
     uint8_t ExtendedChecksum;
+    // для выравнивания, я полагаю
     uint8_t reserved[3];
 } RSDP;
 
@@ -93,26 +105,40 @@ typedef struct {
 #define HPET_TN_TIM_COMP_OFFSET 8
 
 typedef struct {
+    // General Capabilities and ID Register (ronly)
     uint64_t GCAP_ID;
     uint64_t rsv1;
+    // General Configuration Register (rw)
     uint64_t GEN_CONF;
     uint64_t rsv2;
+    // General Interrupt Status Register
     uint64_t GINTR_STA;
     uint64_t rsv3[25];
+    // Main Counter Value Register
     uint64_t MAIN_CNT;
     uint64_t rsv4;
+    // Timer 0 Configuration and Capability Register
     uint64_t TIM0_CONF;
+    // Timer 0 Comparator Value Register
     uint64_t TIM0_COMP;
+    // Timer 0 FSB Interrupt Route Register
     uint64_t TIM0_FSB;
     uint64_t rsv5;
+    // Timer 1 Configuration and Capability Register
     uint64_t TIM1_CONF;
+    // Timer 1 Comparator Value Register
     uint64_t TIM1_COMP;
+    // Timer 1 FSB Interrupt Route Register
     uint64_t TIM1_FSB;
     uint64_t rsv6;
+    // Timer 2 Configuration and Capability Register
     uint64_t TIM2_CONF;
+    // Timer 2 Comparator Value Register
     uint64_t TIM2_COMP;
+    // Timer 2 FSB Interrupt Route Register
     uint64_t TIM2_FSB;
     uint64_t rsv7;
+    // RESERVED FOR TIMERS 3-31
     uint64_t rsv8[84];
 } HPETRegister;
 
@@ -173,9 +199,11 @@ typedef struct {
 #pragma pack(pop)
 
 void acpi_enable(void);
+// Для реализации поддержки HPET  необходимо получить доступ к таблицам ACPI
 RSDP *get_rsdp(void);
-FADT *get_fadt(void);
 HPET *get_hpet(void);
+
+FADT *get_fadt(void);
 
 void hpet_print_struct(void);
 void hpet_init(void);

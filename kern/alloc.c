@@ -42,6 +42,7 @@ test_alloc(uint8_t nbytes) {
 
         freep = &base;
     }
+    spin_lock(&kernel_lock);
 
     check_list();
 
@@ -58,11 +59,13 @@ test_alloc(uint8_t nbytes) {
                 p += p->size;
                 p->size = nunits;
             }
+            spin_unlock(&kernel_lock);
             return (void *)(p + 1);
         }
 
         /* wrapped around free list */
         if (p == freep) {
+            spin_unlock(&kernel_lock);
             return NULL;
         }
     }
@@ -80,6 +83,9 @@ test_free(void *ap) {
 
     /* freed block at start or end of arena */
     Header *p = freep;
+
+    spin_lock(&kernel_lock);
+
     for (; !(bp > p && bp < p->next); p = p->next)
         if (p >= p->next && (bp > p || bp < p->next)) break;
 
@@ -104,4 +110,5 @@ test_free(void *ap) {
     freep = p;
 
     check_list();
+    spin_unlock(&kernel_lock);
 }

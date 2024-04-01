@@ -88,6 +88,90 @@ acpi_find_table(const char *sign) {
      */
     // LAB 5: Your code here:
 
+    // MMIO - это метод выполнения операций ввода/вывода между
+    // перефирийными устройствами и центральным процессором.
+    // Каждое устройство ввода-вывода либо контролирует адресную шину ЦП,
+    // либо реагирует на любой доступ ЦП к адресу, назначенному этому устройству.
+    // В данном случае периф. устройства - это таймеры. 
+
+    static RSDT *rsdt;
+    static size_t rsdt_len;
+    static size_t rsdt_entsz;
+    uint64_t rsdt_pa;
+    size_t i = 0;
+    uint8_t err = 0;
+    uint64_t fadt_pa = 0;
+    if (!rsdt) {
+        if (!uefi_lp->ACPIRoot) {
+            panic("No rsdp\n");
+        }
+        // достаём rsdp, если не нашлось (максимум выполнится 1 раз)
+        RSDP *rsdp = mmio_map_region(uefi_lp->ACPIRoot, sizeof(RSDP));
+        if (!rsdp->Revision) {
+            // проверка чексум
+            for (i = 0; i < offsetof(RSDP, Length); ++i) {
+                err += ((uint8_t *)rsdp)[i];
+            }
+            if (err) {
+                panic("Invalid RSD table detected\n");
+            }
+            // сохраняем значение адреса RSDP
+            // размапленое - физическое
+            rsdt_pa = rsdp->RsdtAddress;
+            rsdt_entsz = 4;
+        } else { // The ACPI Version can be detected using the Revision field in the RSDP.
+                 // If this field contains 0, then ACPI Version 1.0 is used. For subsequent
+                 // versions (ACPI version 2.0 to 6.1), the value 2 is used
+            for (i = 0; i < rsdp->Length; ++i) {
+                err += ((uint8_t *)rsdp)[i];
+            }
+            if (err) {
+                panic("Invalid XSDT table detected\n");
+            }
+            // физический адрес XSDT таблицы
+            rsdt_pa = rsdp->XsdtAddress;
+            rsdt_entsz = 8;
+        }
+        // смотрим в страницы памяти по 2МБ, находим место, где лежит RSDT 
+        rsdt = mmio_map_region(rsdt_pa, sizeof(RSDT));
+        // в зависимости от ревизии, может потребоваться больше байт
+        rsdt = mmio_remap_last_region(rsdt_pa, rsdt, sizeof(RSDP), rsdt->h.Length);
+        for (i = 0; i < rsdt->h.Length; ++i) {
+            err += ((uint8_t *)rsdt)[i];
+        }
+        if (err) {
+            panic("Invalid RSDP\n");
+        }
+        // корректировки длины RSDT в зависимости от ревизии.
+        if (!rsdp->Revision) {
+            if (strncmp(rsdt->h.Signature, "RSDT", 4)) {
+                panic("Invalid RSDT\n");
+            }
+            rsdt_len = (rsdt->h.Length - sizeof(RSDT)) / 4;
+        } else {
+            if (strncmp(rsdt->h.Signature, "XSDT", 4)) {
+                panic("Invalid XSDT\n");
+            }
+            rsdt_len = (rsdt->h.Length - sizeof(RSDT)) / 8;
+        }
+    }
+    ACPISDTHeader *head = NULL;
+    for (i = 0; i < rsdt_len; ++i) {
+        // обходим всю таблицу системных дескрипторов до тех пор,
+        // пока не найдём нужный нам регистр, имеющий некоторый дескриптор.
+        memcpy(&fadt_pa, (uint8_t *)rsdt->PointerToOtherSDT + i * rsdt_entsz, rsdt_entsz);
+        head = mmio_map_region(fadt_pa, sizeof(ACPISDTHeader));
+        head = mmio_remap_last_region(fadt_pa, head, sizeof(ACPISDTHeader), rsdt->h.Length);
+        for (size_t i = 0; i < head->Length; i++) {
+            err += ((uint8_t *)head)[i];
+        }
+        if (err) {
+            panic("Invalid ACPI table '%.4s'", head->Signature);
+        }
+        if (!strncmp(head->Signature, sign, 4)) {
+            return head;
+        }
+    }
     return NULL;
 }
 
@@ -98,8 +182,9 @@ get_fadt(void) {
     // (use acpi_find_table)
     // HINT: ACPI table signatures are
     //       not always as their names
-
-    return NULL;
+    // "FADT" - signature is “FACP”.
+    FADT *fadt_ptr = acpi_find_table("FACP");
+    return fadt_ptr ? fadt_ptr : NULL;
 }
 
 /* Obtain and map RSDP ACPI table address. */
@@ -107,8 +192,8 @@ HPET *
 get_hpet(void) {
     // LAB 5: Your code here
     // (use acpi_find_table)
-
-    return NULL;
+    HPET *hpet_ptr = acpi_find_table("HPET");
+    return hpet_ptr ? hpet_ptr : NULL;
 }
 
 /* Getting physical HPET timer address from its table. */
@@ -170,7 +255,7 @@ hpet_init() {
         // cprintf("hpetFemto = %llu\n", hpetFemto);
         hpetFreq = (1 * Peta) / hpetFemto;
         // cprintf("HPET: Frequency = %d.%03dMHz\n", (uintptr_t)(hpetFreq / Mega), (uintptr_t)(hpetFreq % Mega));
-        /* Enable ENABLE_CNF bit to enable timer */
+        /* Enable ENABLE_CNF bit to enable timers */
         hpetReg->GEN_CONF |= HPET_ENABLE_CNF;
         nmi_enable();
     }
@@ -209,11 +294,30 @@ hpet_get_main_cnt(void) {
 void
 hpet_enable_interrupts_tim0(void) {
     // LAB 5: Your code here
+    // включаем "замену устаревших версий". Легаси-часть
+    hpetReg->GEN_CONF |= HPET_LEG_RT_CNF;
+    hpetReg->TIM0_CONF = (IRQ_TIMER << 9);
+    // включаем 2-ой бит, 3-ий бит и 6-ой - тригер на прерывания, периодичность,
+    // возможность прямого установления периода соотвественно.
+    hpetReg->TIM0_CONF |= HPET_TN_TYPE_CNF | HPET_TN_INT_ENB_CNF | HPET_TN_VAL_SET_CNF;
+    // устанавливаем значение, чтобы триггериться каждые 0.5 секунд.
+    // hpetReg->TIM0_COMP = hpet_get_main_cnt() + Peta / hpetFemto / 2;
+    hpetReg->TIM0_COMP = Peta / hpetFemto / 2;
+    // размаскирование прерываний на линии IRQ_TIMER
+    pic_irq_unmask(IRQ_TIMER);
 }
 
 void
 hpet_enable_interrupts_tim1(void) {
     // LAB 5: Your code here
+    hpetReg->GEN_CONF |= HPET_LEG_RT_CNF;
+    hpetReg->TIM1_CONF = (IRQ_CLOCK << 9);
+    hpetReg->TIM1_CONF |= HPET_TN_TYPE_CNF | HPET_TN_INT_ENB_CNF | HPET_TN_VAL_SET_CNF;
+    // hpetReg->TIM1_COMP = hpet_get_main_cnt() + Peta / hpetFemto / 2 * 3;
+    // тригерримся каждые 1,5 секунды
+    hpetReg->TIM1_COMP = Peta / hpetFemto / 2 * 3;
+    // размаскирование прерываний на линии IRQ_CLOCK
+    pic_irq_unmask(IRQ_CLOCK);
 }
 
 void
@@ -231,10 +335,18 @@ hpet_handle_interrupts_tim1(void) {
  * about pause instruction. */
 uint64_t
 hpet_cpu_frequency(void) {
-    static uint64_t cpu_freq;
-
     // LAB 5: Your code here
+    uint64_t cpu_freq;
+    uint64_t first = hpet_get_main_cnt();
+    uint64_t first_tsc = read_tsc();
+    uint64_t next = first;
+    uint64_t eps = hpetFreq / 10;
 
+    while (next - first < eps) {
+        next = hpet_get_main_cnt();
+    }
+    uint64_t next_tsc = read_tsc();
+    cpu_freq = (next_tsc - first_tsc) * 10;
     return cpu_freq;
 }
 
@@ -249,9 +361,26 @@ pmtimer_get_timeval(void) {
  *      can be 24-bit or 32-bit. */
 uint64_t
 pmtimer_cpu_frequency(void) {
-    static uint64_t cpu_freq;
-
     // LAB 5: Your code here
+    uint64_t cpu_freq;
+    uint32_t first = pmtimer_get_timeval();
+    uint64_t first_tsc = read_tsc();
 
+    uint32_t next = first;
+    uint64_t d = 0;
+    uint64_t eps = PM_FREQ / 10;
+    while (d < eps) {
+        next = pmtimer_get_timeval();
+        // 24-bit ACPI PM timer
+        if (first - next <= 0xFFFFFF) {
+            d = next - first + 0xFFFFFF;
+        } else if (first - next > 0) {
+            d = next - first + 0xFFFFFFFF;
+        } else {
+            d = next - first;
+        }
+    }
+    uint64_t next_tsc = read_tsc();
+    cpu_freq = (next_tsc - first_tsc) * 10;
     return cpu_freq;
 }

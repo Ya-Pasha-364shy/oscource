@@ -99,7 +99,7 @@ trap_init(void) {
     extern void (*clock_thdlr)(void);
     idt[IRQ_OFFSET + IRQ_CLOCK] = GATE(0, GD_KT, (uint64_t)&clock_thdlr, 0);
     // LAB 5: Your code here
-    
+    idt[IRQ_OFFSET + IRQ_TIMER] = GATE(0, GD_KT, (uint64_t)&clock_thdlr, 0);
     /* Per-CPU setup */
     trap_init_percpu();
 }
@@ -217,15 +217,13 @@ trap_dispatch(struct Trapframe *tf) {
     case IRQ_OFFSET + IRQ_CLOCK:
     case IRQ_OFFSET + IRQ_TIMER:
         // LAB 4: Your code here
-<<<<<<< HEAD
         rtc_check_status();
-        // прерывание было обработано
         pic_send_eoi(IRQ_CLOCK);
         // запуск планировщика
         sched_yield();
-=======
         // LAB 5: Your code here
->>>>>>> lab5
+        // обработку прерываний теперь осуществляют таймеры HPET
+        timer_for_schedule->handle_interrupts();
         return;
     default:
         print_trapframe(tf);
