@@ -43,34 +43,68 @@ RTC — Real-Time Clock. Часы реального времени являют
 
 Теперь планировщик умеет контролировать время исполнения процесса.
 
+## Лабораторная работа №5
+
+В предыдущей лабораторной работе мы реализовали поддержку вытесняющей многозадачности с помощью таймера RTC. Хотя для наших задач данный метод даёт приемлемую частоту переключения задач, в настоящее время RTC используется исключительно для получения календарного времени. Кроме RTC на x86-совместимых системах доступны и другие таймеры, в том числе HPET (High Precision Event Timer), который позволяет прозрачно заменить функционал таймера RTC. HPET имеет нескольких таймеров, доступных для конфигурирования. 
+
+Что было сделано ?
+* добавлена поддержка таймеров HPET (hpet0 и hpet1 с периодами прерываний 0.5 и 1.5 секунд соотвественно) по спецификации и [OSDev](https://wiki.osdev.org/HPET), посредством предоставления доступа к таблицам FADT (FACP) и HPET
+* добавлена обработка прерываний от таймеров на каждой из линий (0 - IRQ_TIMER, 8 - IRQ_CLOCK) - они приходят от PIC-контроллера.
+* в функции test_alloc и test_free (файл alloc.c) добавлена защита блокировками с активным ожиданием (spin_lock) таким образом, чтобы функции выделения и освобождения памяти не могли работать со списком страниц одновременно, чтобы процессы, которые их вызывают не могли повредить список свободных страниц памяти
+* был реализован секундомер, который отсекает время выполнения для каждого процесса - ((число тактов ЦП в момент времени стопа секундомера - число тактов ЦП в момент старта секундомера) / частота процессора)
+
+## Лабораторная работа №6
+
+Помимо процессора, важным ресурсом компьютера является оперативная память. Часть операционной системы, которая ей управляет, называется диспетчером памяти.
+
+В основе виртуальной памяти лежит идея, что у каждого процесса имеется свое собственное адресное пространство, разделенное на участки, называемые страницами. Каждая страница может быть отображена на участок физической памяти того же размера, но отображение всех возможных страниц сразу необязательно. При доступе к памяти программа использует не физические адреса, а виртуальные, которые затем с учетом таблицы страниц процесса транслируются процессором в физические. Кроме того, процессор может, например, ограничивать доступ процесса на запись в определенные страницы памяти — т. е. процесс может получить доступ к некоторым страницам памяти ядра без опасений, что он испортит его.
+
+Цель:
+* создать аллокатор памяти, который позволит ядру выделять и освобождать память. Аллокатор будет оперрировать страницами размером по 4КБ (4 * 1024 байт). Для его реализации нужно вести учёт выделенный и свободных физических страниц, а также количество процессов, использующих каждую страницу.
+
+Ядро операционной системы часто имеет очень высокий виртуальный адрес связывания, например, 0x8041500000, чтобы оставить нижнюю часть виртуального адресного пространства для пользовательских программ. Причины этого станут яснее в последующих лабораторных работах.
+
+Хотя виртуальный адрес ядра достаточно высок, чтобы оставить достаточно адресного пространства для UEFI загрузчика, оно будет загружено в физическую память в точку 21 МБ. Этот подход требует, чтобы компьютер имел хотя бы несколько мегабайт физической памяти (чтобы физический адрес 0x01500000 был доступен), но это условие скорее всего выполняется любым современным компьютером.
+
+Операционная система должна отслеживать, какие части физической памяти в настоящий момент свободны, а какие используются. Данную задачу выполняет модуль, который называется менеджером памяти. Для эффективного управления памятью используется ***одно дерево***, описывающее физическую память системы, а также ***набор связанных списков свободных страниц*** для каждого используемого размера памяти. 
+
+Узлы деревьев выделяются из самой памяти аллокатора и отображаются на физическую память 1:1, как и сам аллокатор, тип `KERN_BASE_ADDR`. Выделение узлов происходит из пулов узлов, которые хранятся в страницах и выделяются через alloc_page().
+
+* дописали функции работы со списками (list_). Списки имеют пустой заголовочный узел и закольцованы.
+* detect_memory() инициализирует дерево физической памяти, используя карту памяти UEFI (uefi.h) или память CMOS (Энергонезависимая память BIOS), если первая недоступна.
+* attach_region() присоединяет произвольный регион памяти к физическому дереву, разбивая этот регион на страницы, выровненные на степени 2 и имеющие размер кратный степени 2.
+* alloc_child() выделяет и инициализирует дочерниый узел в дереве, описывающим физическую память.
+
+По выполнению данной лабораторной работы, мы получаем управление свободными страницами памяти (минимум по 4 КБ), хранящимися в дереве физической памяти - она позволяет отслеживать какие процессы используют ту или иную память, сколько страниц выделено под процесс и другие характеристики. Пользовательские страницы (под пользовательские процессы) должны иметь тип без доступа исполнения в пространстве ядра !
+
 # Другое
 
 This branch contains vastly improved kernel memory
 subsystem with following new features:
-    * 2M/1G pages
-    * Lazy copying/lazy memory allocation
-        * Used for speeding up ASAN memory allocation
-        * Kernel memory is also lazily allocated
-    * NX flag
-    * Buddy physical memory allocator
-    * O((log N)^2) region manipulation
-    * More convenient syscall API
-    * IPC with memory regions of size larger than 4K
-        * Not used at the moment but would be useful
-          for file server optimization
-    * Reduced memory consumption by a lot
-    * All supported sanitizers can work simultaneously
-      with any amount of memory (as long as bootloader can allocate enough memory for the kernel)
+* 2M/1G pages
+* Lazy copying/lazy memory allocation
+    * Used for speeding up ASAN memory allocation
+    * Kernel memory is also lazily allocated
+* NX flag
+* Buddy physical memory allocator
+* O((log N)^2) region manipulation
+* More convenient syscall API
+* IPC with memory regions of size larger than 4K
+    * Not used at the moment but would be useful
+      for file server optimization
+* Reduced memory consumption by a lot
+* All supported sanitizers can work simultaneously
+  with any amount of memory (as long as bootloader can allocate enough memory for the kernel)
 
 The code is mostly located in kern/pmap.c
 A set of trees is used for holding metadata (nodes are of type struct Page):
-    * A tree describing physical memory
-    * One tree for every address space (for every environment and kernel)
+* A tree describing physical memory
+* One tree for every address space (for every environment and kernel)
 
 TODO
-    * Replace user_mem_assert with exception-based code
-        * copyin/copyout functions
-    * Refactor address space and move all kernel-only memory
-      regions to canonical upper part of address space
-      (this requires copyin/copyout functions because
-       ASAN should never touch user-space memory)
+* Replace user_mem_assert with exception-based code
+    * copyin/copyout functions
+* Refactor address space and move all kernel-only memory
+  regions to canonical upper part of address space
+  (this requires copyin/copyout functions because
+   ASAN should never touch user-space memory)
