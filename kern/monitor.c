@@ -17,6 +17,7 @@
 #include <kern/env.h>
 #include <kern/pmap.h>
 #include <kern/trap.h>
+#include <kern/monitor.h>
 
 #define WHITESPACE "\t\r\n "
 #define MAXARGS    16
@@ -128,10 +129,11 @@ mon_frequency(int argc, char **argv, struct Trapframe *tf) {
     return 0;
 }
 
-// LAB 6: Your code here
 /* Implement memory (mon_memory) commands. */
 int
 mon_memory(int argc, char **argv, struct Trapframe *tf) {
+    // LAB 6: Your code here
+    dump_memory_lists();
     return 0;
 }
 

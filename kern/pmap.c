@@ -79,19 +79,32 @@ list_init(struct List *list) {
 
 /*
  * Appends list element 'new' after list element 'list'
+ * добавляем элемент new после элемента list.
  */
 inline static void __attribute__((always_inline))
 list_append(struct List *list, struct List *new) {
     // LAB 6: Your code here
+    new->prev = list;
+    new->next = list->next;
+    list->next->prev = new;
+    list->next = new;
 }
 
 /*
  * Deletes list element from list.
  * NOTE: Use list_init() on deleted List element
+ * Убираем элемент сразу после головы списка
  */
 inline static struct List *__attribute__((always_inline))
 list_del(struct List *list) {
     // LAB 6: Your code here
+    if (!list || list_empty(list) == true) {
+        return NULL;
+    }
+    struct List *deleted = list;
+    list->prev->next = list->next;
+    list->next->prev = list->prev;
+    list_init(deleted);
 
     return list;
 }
@@ -149,10 +162,11 @@ free_desc_rec(struct Page *p) {
     }
 }
 
-/*
+/**
+ * @brief
  * This function allocates child
  * node for given parent in physical memory tree
- * right indicated whether left or right child should
+ * @param right indicated whether left or right child should
  * be allocated.
  *
  * New child describes lower (for the left one)
@@ -163,7 +177,7 @@ free_desc_rec(struct Page *p) {
  * NOTE: Be careful with overflows
  * NOTE: Child node should have it's
  * reference counter to be equal either 0 or 1
- * depending on whether parent's refc is 0 or non-zero,
+ * depending on whether parent's `refc` is 0 or non-zero,
  * correspondingly.
  * HINT: Use alloc_descriptor() here
  */
@@ -173,12 +187,26 @@ alloc_child(struct Page *parent, bool right) {
     assert(parent);
 
     // LAB 6: Your code here
-
+    if (!parent->class) // 0 - last node
+        return NULL;
+ 
     struct Page *new = NULL;
+    new = alloc_descriptor(parent->state);
+    if (right) {
+        parent->right = new;
+        new->addr = parent->addr + (1ULL << (parent->class - 1));
+    } else {
+        parent->left = new;
+        new->addr = parent->addr;
+    }
+    // new->left = NULL; // will be NULL after alloc
+    // new->right = NULL;
+    new->parent = parent;
+    new->refc = parent->refc ? 1 : 0;
+    new->class = parent->class - 1;
 
     return new;
 }
-
 
 /* Lookup physical memory node with given address and class */
 static struct Page *
@@ -301,19 +329,41 @@ page_unref(struct Page *page) {
     }
 }
 
+/**
+ * attaching region to some page
+*/
 static void
 attach_region(uintptr_t start, uintptr_t end, enum PageState type) {
-    if (trace_memory_more)
+    if (trace_memory_more) {
         cprintf("Attaching memory region [%08lX, %08lX] with type %d\n", start, end - 1, type);
-    int class = 0, res = 0;
+    }
 
-    (void)class;
-    (void)res;
-
+    /**
+     * Присоединяет произольный регион памяти к физическому дереву,
+     * разбивая этот регион на страницы, выровненные на
+     * адреса степени 2 и имеющие размер кратный степени 2.
+     * Данная функция использует page_lookup для аллокации новой страницы
+     * с параметром alloc равным 1
+    */
+    int class;
+    // адреса должны быть выровнены по степени двойки 
     start = ROUNDDOWN(start, CLASS_SIZE(0));
     end = ROUNDUP(end, CLASS_SIZE(0));
 
     // LAB 6: Your code here
+    while (start < end) {
+         class = -1;
+         while (!(start & CLASS_MASK(class + 1)) && start + CLASS_SIZE(class + 1) <= end) {
+             ++class;
+         }
+ 
+         if (class == -1) {
+            break;
+        }
+        // inside alloc == true
+        page_lookup(NULL, start, class, type, true); // assert inside if alloc
+        start += CLASS_SIZE(class);
+    }
 }
 
 /*
@@ -424,6 +474,60 @@ dump_virtual_tree(struct Page *node, int class) {
 void
 dump_memory_lists(void) {
     // LAB 6: Your code here
+    // EFI_MEMORY_DESCRIPTOR *start = (void *)uefi_lp->MemoryMap;
+    // EFI_MEMORY_DESCRIPTOR *end = (void *)(uefi_lp->MemoryMap + uefi_lp->MemoryMapSize);
+    // uint64_t max_mem_addr = 0;
+    // uint64_t min_mem_addr = start->PhysicalStart;
+    // uint64_t mymax = min_mem_addr;
+    // uint64_t mymin = max_mem_addr;
+    // while (start < end) {
+    //     max_mem_addr = MAX(start->NumberOfPages * EFI_PAGE_SIZE + start->PhysicalStart, max_mem_addr);
+    //     min_mem_addr = MIN(start->PhysicalStart, min_mem_addr);
+    //     start = (void *)((uint8_t *)start + uefi_lp->MemoryMapDescriptorSize);
+    // }
+    // struct Page *page = NULL;
+    // for (int i = 0; i <= MAX_CLASS; i++) {
+    //     uint64_t cur_size = CLASS_SIZE(i);
+    //     uint64_t num = (max_mem_addr - min_mem_addr) / CLASS_SIZE(i);
+    //     if ((max_mem_addr - min_mem_addr) % CLASS_SIZE(i)) {
+    //         num = 1;
+    //     }
+    //     for (uint64_t j = 0; j < num; j++) {
+    //         if ((page = page_lookup(NULL, min_mem_addr + j * cur_size, i, ALLOCATABLE_NODE, 0)) && page->state == ALLOCATABLE_NODE) {
+    //             if (page->class == 0) {
+    //                 if (((uint64_t)page->addr << CLASS_BASE) > mymax) {
+    //                     mymax = ((uint64_t)page->addr << CLASS_BASE);
+    //                 } 
+    //                 if (((uint64_t)page->addr << CLASS_BASE) < mymin) {
+    //                     mymin = ((uint64_t)page->addr << CLASS_BASE);
+    //                 }
+    //             }
+    //         }
+    //     }
+    // }
+    // cprintf("physical page address: %lx - %lx\n", mymin, mymax);
+
+    for (int i = 0; i < MAX_CLASS; i++) {
+        cprintf("checking class %d\n", i);
+        struct Page *page = (void *)free_classes[i].next;
+
+        if (list_empty(&page->head)) {
+            cprintf("----------------\n");
+            continue;
+        }
+
+        while (page != (void *)&free_classes[i]) {
+            cprintf("PA: 0x%016lx, Size: 0x%llx, refc=%d, phy=%p\n",
+                    (uintptr_t)page->addr << CLASS_BASE,
+                    CLASS_SIZE(page->class),
+                    page->refc,
+                    page->phy);
+
+            page = (void *)page->head.next;
+        }
+    }
+
+    return;
 }
 
 
@@ -522,11 +626,17 @@ detect_memory(void) {
 
     /* Attach first page as reserved memory */
     // LAB 6: Your code here
+    // зарезервировали 2^12 = 4096 байт (4 KB)
+    attach_region(0, PAGE_SIZE, RESERVED_NODE);
 
     /* Attach kernel and old IO memory
      * (from IOPHYSMEM to the physical address of end label. end points the the
      *  end of kernel executable image.)*/
     // LAB 6: Your code here
+    attach_region(IOPHYSMEM, PADDR(end), RESERVED_NODE);
+    // между PAGE_SIZE и IOPHYSMEM есть свободный сегмент памяти, который ничем не занят
+    // VGA, Video bios, motherboard bios - эта память зарезервировна под нужды устройств ввода-вывода  
+    // attach_region(IOPHYSMEM, EXTPHYSMEM, RESERVED_NODE);
 
     /* Detect memory via ether UEFI or CMOS */
     if (uefi_lp && uefi_lp->MemoryMap) {
@@ -554,8 +664,8 @@ detect_memory(void) {
             /* Attach memory described by memory map entry described by start
              * of type type*/
             // LAB 6: Your code here
-            (void)type;
-
+            // от старта и до конца помечаем память типом type
+            attach_region((uintptr_t) start->PhysicalStart, (uintptr_t) start->PhysicalStart + PAGE_SIZE * start->NumberOfPages, type);
             start = (void *)((uint8_t *)start + uefi_lp->MemoryMapDescriptorSize);
         }
 
@@ -624,6 +734,12 @@ init_memory(void) {
     if (trace_init) cprintf("Memory allocator is initialized\n");
 
     detect_memory();
+    struct Page *p = alloc_page(0, ALLOC_POOL), *old = NULL;
+     while(p) {
+        old = p;
+        p = alloc_page(0, ALLOC_POOL);
+    }
+    page_unref(old);
     check_physical_tree(&root);
     if (trace_init) cprintf("Physical memory tree is correct\n");
 }
