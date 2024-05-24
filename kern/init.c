@@ -181,6 +181,7 @@ i386_init(void) {
 #else
     /* Touch all you want. */
     ENV_CREATE(user_hello, ENV_TYPE_USER);
+    // ENV_CREATE(user_divzero, ENV_TYPE_USER);
 #endif /* TEST* */
 #endif
 

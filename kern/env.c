@@ -91,16 +91,24 @@ envid2env(envid_t envid, struct Env **env_store, bool need_check_perm) {
 void
 env_init(void) {
     /* kzalloc_region only works with current_space != NULL */
+    /* current_space will be set by init_memory()  */
 
     /* Allocate envs array with kzalloc_region().
      * Don't forget about rounding.
      * kzalloc_region() only works with current_space != NULL */
     // LAB 8: Your code here
+    envs = (struct Env *)kzalloc_region(sizeof(struct Env) * NENV);
+    memset(envs, 0, sizeof(struct Env) * NENV);
 
     /* Map envs to UENVS read-only,
      * but user-accessible (with PROT_USER_ set) */
     // LAB 8: Your code here
-
+    if (map_region(current_space, UENVS, &kspace,
+                   (uintptr_t)envs, UENVS_SIZE,
+                   PROT_R | PROT_USER_) == -E_INVAL)
+    {
+        panic("Cannot map physical region at %p of size %zd", envs, (size_t)UENVS_SIZE);
+    }
     /* Set up envs array */
     // LAB 3: Your code here
 
@@ -332,7 +340,7 @@ load_icode(struct Env *env, uint8_t *binary, size_t size) {
     // LAB 3: Your code here
     struct Elf *elf = (struct Elf *)binary;
     /* должно быть ELF_MAGIC == ".ELF" */
-    if (elf->e_magic == ELF_MAGIC) { 
+    if (elf->e_magic == ELF_MAGIC) {
         // число заголовков программы
         int i = 0;
         int phnum = elf->e_phnum;
@@ -341,15 +349,42 @@ load_icode(struct Env *env, uint8_t *binary, size_t size) {
         if (phs == 0) {
             return -E_INVALID_EXE;
         }
+
+        switch_address_space(&env->address_space);
+
         for (; i < phnum; ++i) {
             // загружаем только те сегменты, что могут быть загружены -- .text (cs), .data (ds), ...
             if ((phs + i)->p_type == ELF_PROG_LOAD) {
-                // загружаем адрес очередного сегмента
-                memcpy((void *)phs[i].p_va, binary + phs[i].p_offset, phs[i].p_filesz);
-                // зануляем всё, что идёт после сегмента
-                memset((void *)phs[i].p_va + phs[i].p_filesz, 0, phs[i].p_memsz - phs[i].p_filesz);
+
+                if (phs[i].p_memsz < phs[i].p_filesz) {
+                    switch_address_space(&kspace);
+                    return -E_INVALID_EXE;
+                }
+
+                void *first_byte_segment_in_file = (void *)(binary + phs[i].p_offset);
+                void *va_first_byte_segment = (void *)(uintptr_t)phs[i].p_va;
+
+                uintptr_t first_page = ROUNDDOWN(phs[i].p_va, PAGE_SIZE);
+                uintptr_t last_page = ROUNDUP(phs[i].p_va + phs[i].p_memsz, PAGE_SIZE);
+
+                if (map_region(&env->address_space, first_page, NULL, 0, last_page - first_page,
+                               PROT_RWX | PROT_USER_ | ALLOC_ZERO) == -E_INVAL) {
+                    panic("unable to map pages on env's address-space !\n");
+                }
+
+                // приводим в соотвествие содержимое, находящееся под виртуальным адресом.
+                memcpy(va_first_byte_segment, first_byte_segment_in_file, phs[i].p_filesz);
+                memset(va_first_byte_segment + phs[i].p_filesz, 0, phs[i].p_memsz - phs[i].p_filesz);
             }
         }
+
+        map_region(&env->address_space, USER_STACK_TOP - USER_STACK_SIZE,
+                   NULL, 0, USER_STACK_SIZE,
+                   PROT_R | PROT_W | PROT_USER_ | ALLOC_ZERO);
+
+
+        switch_address_space(&kspace);
+
         // загружаем точку входа в ELF-файл (для его исполнения).
         // e_entry - куда система передаст управление, таким образом запуская процесс
         // env->env_tf - должны лежать сохранённые регистры для безопасного 
@@ -358,6 +393,8 @@ load_icode(struct Env *env, uint8_t *binary, size_t size) {
         // выполняем связывание, чтобы они пользовательские программы могли использовать
         // функции ядра
         bind_functions(env, binary, size, elf->e_entry, elf->e_entry + size);
+    } else {
+        return -E_INVAL;
     }
     return 0;
 }
@@ -371,17 +408,21 @@ load_icode(struct Env *env, uint8_t *binary, size_t size) {
 void
 env_create(uint8_t *binary, size_t size, enum EnvType type) {
     // LAB 3: Your code here
-    struct Env *new;
+    struct Env *new_process;
+    /* it's already done in env_alloc */
+    // new_process->env_type = type;
+    
     // создали новый процесс, точнее, взяли свободный из свободных,
     // проинициализировали его поля, задали нач. значения регистрам.
-    if (env_alloc(&new, 0, type) < 0) {
+    if (env_alloc(&new_process, 0, type) < 0) {
         panic("Can't allocate new environment\n");
     }
+    // LAB 8: Your code here
+    new_process->binary = binary;
     // связываем бинарь с процессом, который будет его выполнять
-    if (0 != load_icode(new, binary, size)) {
+    if (load_icode(new_process, binary, size) < 0) {
         panic("Can't load and bind process with binary\n");
     }
-    // LAB 8: Your code here
 }
 
 /* Frees env and all memory it uses */
@@ -430,6 +471,7 @@ env_destroy(struct Env *env) {
     /* Reset in_page_fault flags in case *current* environment
      * is getting destroyed after performing invalid memory access. */
     // LAB 8: Your code here
+    in_page_fault = 0;
 }
 
 #ifdef CONFIG_KSPACE
@@ -477,7 +519,7 @@ env_pop_tf(struct Trapframe *tf) {
             : "memory");
 
     /* Mostly to placate the compiler */
-    panic("Reached unrecheble\n");
+    panic("Reached unreachable\n");
 }
 
 /* Context switch from curenv to env.
@@ -522,5 +564,8 @@ env_run(struct Env *env) {
     curenv->env_status = ENV_RUNNING;
     curenv->env_runs++;
 
+    switch_address_space(&curenv->address_space);
     env_pop_tf(&curenv->env_tf);
+    
+    /* Reached unreachable */
 }
