@@ -64,6 +64,8 @@ struct Segdesc32 gdt[2 * NCPU + 7] = {
 
 struct Pseudodesc gdt_pd = {sizeof(gdt) - 1, (unsigned long)gdt};
 
+static _Noreturn void page_fault_handler(struct Trapframe *tf);
+
 static const char *
 trapname(int trapno) {
     static const char *const excnames[] = {
@@ -95,8 +97,35 @@ trapname(int trapno) {
     return "(unknown trap)";
 }
 
+extern void (*divide_thdlr)(void);
+extern void (*debug_thdlr)(void);
+extern void (*nmi_thdlr)(void);
+extern void (*brkpt_thdlr)(void);
+extern void (*oflow_thdlr)(void);
+extern void (*bound_thdlr)(void);
+extern void (*illop_thdlr)(void);
+extern void (*device_thdlr)(void);
+
+extern void (*dblflt_thdlr)(void);
+extern void (*tss_thdlr)(void);
+extern void (*segnp_thdlr)(void);
+extern void (*stack_thdlr)(void);
+extern void (*gpflt_thdlr)(void);
+extern void (*pgflt_thdlr)(void);
+extern void (*fperr_thdlr)(void);
+
+extern void (*align_thdlr)(void);
+extern void (*mchk_thdlr)(void);
+extern void (*simderr_thdlr)(void);
+
+extern void (*syscall_thdlr)(void);
+
+extern void (*kbd_thdlr)(void);
+extern void (*serial_thdlr)(void);
+
 void
 trap_init(void) {
+    // IN LAB 8 it is unused:
     // LAB 4: Your code here
     extern void (*clock_thdlr)(void);
     idt[IRQ_OFFSET + IRQ_CLOCK] = GATE(0, GD_KT, (uint64_t)&clock_thdlr, 0);
@@ -105,6 +134,29 @@ trap_init(void) {
 
     // LAB 8: Your code here
     /* Insert trap handlers into IDT */
+
+    idt[T_DIVIDE] = GATE(0, GD_KT, (uint64_t)&divide_thdlr, 0);
+    idt[T_DEBUG] = GATE(0, GD_KT, (uint64_t)&debug_thdlr, 0);
+    idt[T_NMI] = GATE(0, GD_KT, (uint64_t)&nmi_thdlr, 0);
+    idt[T_BRKPT] = GATE(0, GD_KT, (uint64_t)&brkpt_thdlr, 3);
+    idt[T_OFLOW] = GATE(0, GD_KT, (uint64_t)&oflow_thdlr, 0);
+    idt[T_BOUND] = GATE(0, GD_KT, (uint64_t)&bound_thdlr, 0);
+    idt[T_ILLOP] = GATE(0, GD_KT, (uint64_t)&illop_thdlr, 0);
+    idt[T_DEVICE] = GATE(0, GD_KT, (uint64_t)&device_thdlr, 0);
+    idt[T_DBLFLT] = GATE(0, GD_KT, (uint64_t)&dblflt_thdlr, 0);
+    idt[T_TSS] = GATE(0, GD_KT, (uint64_t)&tss_thdlr, 0);
+    idt[T_SEGNP] = GATE(0, GD_KT, (uint64_t)&segnp_thdlr, 0);
+    idt[T_STACK] = GATE(0, GD_KT, (uint64_t)&stack_thdlr, 0);
+    idt[T_GPFLT] = GATE(0, GD_KT, (uint64_t)&gpflt_thdlr, 0);
+    idt[T_PGFLT] = GATE(0, GD_KT, (uint64_t)&pgflt_thdlr, 0);
+    idt[T_FPERR] = GATE(0, GD_KT, (uint64_t)&fperr_thdlr, 0);
+    idt[T_ALIGN] = GATE(0, GD_KT, (uint64_t)&align_thdlr, 0);
+    idt[T_MCHK] = GATE(0, GD_KT, (uint64_t)&mchk_thdlr, 0);
+    idt[T_SIMDERR] = GATE(0, GD_KT, (uint64_t)&simderr_thdlr, 0);
+
+    idt[T_SYSCALL] = GATE(0, GD_KT, (uint64_t)&syscall_thdlr, 3);
+    idt[IRQ_OFFSET + IRQ_KBD] = GATE(0, GD_KT, (uint64_t)(&kbd_thdlr), 3);
+    idt[IRQ_OFFSET + IRQ_SERIAL] = GATE(0, GD_KT, (uint64_t)(&serial_thdlr), 3);
 
     /* Setup #PF handler dedicated stack
      * It should be switched on #PF because
@@ -228,8 +280,14 @@ trap_dispatch(struct Trapframe *tf) {
                 tf->tf_regs.reg_rsi,
                 tf->tf_regs.reg_r8);
         return;
+    case T_PGFLT:
+        /* Handle processor exceptions. */
+        // LAB 9: Your code here.
+        page_fault_handler(tf);
+        return;
     case T_BRKPT:
         // LAB 8: Your code here.
+        monitor(tf);
         return;
     case IRQ_OFFSET + IRQ_SPURIOUS:
         /* Handle spurious interrupts
@@ -297,7 +355,7 @@ trap(struct Trapframe *tf) {
         if ((tf->tf_err & ~FEC_W) == FEC_U && curenv && SANITIZE_USER_SHADOW_BASE <= va &&
             va < SANITIZE_USER_SHADOW_BASE + SANITIZE_USER_SHADOW_SIZE) {
             int res = map_region(&curenv->address_space, ROUNDDOWN(va, PAGE_SIZE),
-                                 NULL, 0, PAGE_SIZE, ALLOC_ONE | PROT_R | PROT_W | PROT_USER_);
+                                 NULL, 0, PAGE_SIZE, ALLOC  _ONE | PROT_R | PROT_W | PROT_USER_);
             assert(!res);
         }
 #endif
@@ -309,7 +367,7 @@ trap(struct Trapframe *tf) {
         /* Read processor's CR2 register to find the faulting address */
         int res = force_alloc_page(current_space, va, MAX_ALLOCATION_CLASS);
         if (trace_pagefaults) {
-            bool can_redir = false;
+            bool can_redir = tf->tf_err & FEC_U && curenv && curenv->env_pgfault_upcall;
             cprintf("<%p> Page fault ip=%08lX va=%08lX err=%c%c%c%c%c -> %s\n", current_space, tf->tf_rip, va,
                     tf->tf_err & FEC_P ? 'P' : '-',
                     tf->tf_err & FEC_U ? 'U' : '-',
@@ -347,4 +405,106 @@ trap(struct Trapframe *tf) {
         env_run(curenv);
     else
         sched_yield();
+}
+
+static _Noreturn void
+page_fault_handler(struct Trapframe *tf) {
+    uintptr_t cr2 = rcr2();
+    (void)cr2;
+
+    /* Handle kernel-mode page faults. */
+    if (!(tf->tf_err & FEC_U)) {
+        print_trapframe(tf);
+        panic("Kernel pagefault\n");
+    }
+
+    /* We've already handled kernel-mode exceptions, so if we get here,
+     * the page fault happened in user mode.
+     *
+     * Call the environment's page fault upcall, if one exists.  Set up a
+     * page fault stack frame on the user exception stack (below
+     * USER_EXCEPTION_STACK_TOP), then branch to curenv->env_pgfault_upcall.
+     *
+     * The page fault upcall might cause another page fault, in which case
+     * we branch to the page fault upcall recursively, pushing another
+     * page fault stack frame on top of the user exception stack.
+     *
+     * The trap handler needs one word of scratch space at the top of the
+     * trap-time stack in order to return.  In the non-recursive case, we
+     * don't have to worry about this because the top of the regular user
+     * stack is free.  In the recursive case, this means we have to leave
+     * an extra word between the current top of the exception stack and
+     * the new stack frame because the exception stack _is_ the trap-time
+     * stack.
+     *
+     * If there's no page fault upcall, the environment didn't allocate a
+     * page for its exception stack or can't write to it, or the exception
+     * stack overflows, then destroy the environment that caused the fault.
+     * Note that the grade script assumes you will first check for the page
+     * fault upcall and print the "user fault va" message below if there is
+     * none.  The remaining three checks can be combined into a single test.
+     *
+     * Hints:
+     *   user_mem_assert() and env_run() are useful here.
+     *   To change what the user environment runs, modify 'curenv->env_tf'
+     *   (the 'tf' variable points at 'curenv->env_tf'). */
+
+
+    static_assert(UTRAP_RIP == offsetof(struct UTrapframe, utf_rip), "UTRAP_RIP should be equal to RIP offset");
+    static_assert(UTRAP_RSP == offsetof(struct UTrapframe, utf_rsp), "UTRAP_RSP should be equal to RSP offset");
+
+    uintptr_t fault_va = cr2;
+    cprintf("[%09x] ENTER %p \n", curenv->env_id, curenv->env_pgfault_upcall);
+    if (curenv->env_pgfault_upcall == NULL) {
+        cprintf("[%09x] user fault va: %08lx ip %08lx\n", curenv->env_id, fault_va, tf->tf_rip);
+		goto ret;
+    }
+
+    /* Force allocation of exception stack page to prevent memcpy from
+     * causing pagefault during another pagefault */
+    // LAB 9: Your code here:
+    int res = force_alloc_page(&curenv->address_space, USER_EXCEPTION_STACK_TOP - PAGE_SIZE, 1);
+    if (res < 0) cprintf("force alloc page failed: %i\n", res);
+
+    /* Assert existance of exception stack */
+    // LAB 9: Your code here:
+    uintptr_t user_rsp = USER_EXCEPTION_STACK_TOP;
+    if (tf->tf_rsp < USER_EXCEPTION_STACK_TOP && tf->tf_rsp > USER_EXCEPTION_STACK_TOP - PAGE_SIZE)
+        user_rsp = tf->tf_rsp - sizeof(uintptr_t);
+    user_rsp -= sizeof(struct UTrapframe);
+    user_mem_assert(curenv, (void*)user_rsp, sizeof(struct UTrapframe), PROT_W);
+
+    /* Build local copy of UTrapframe */
+    // LAB 9: Your code here:
+    struct UTrapframe user_trap;
+    user_trap.utf_fault_va = (uint64_t)fault_va;
+    user_trap.utf_err = tf->tf_err;
+    user_trap.utf_regs = tf->tf_regs;
+    user_trap.utf_rip = tf->tf_rip;
+    user_trap.utf_rflags = tf->tf_rflags;
+    user_trap.utf_rsp = tf->tf_rsp;
+    tf->tf_rsp = user_rsp;
+    tf->tf_rip = (uintptr_t)curenv->env_pgfault_upcall;
+
+    /* And then copy it userspace (nosan_memcpy()) */
+    // LAB 9: Your code here:
+    struct AddressSpace *old = switch_address_space(&curenv->address_space);
+    set_wp(false);
+    nosan_memcpy((void *)(user_rsp), (void *)&user_trap, sizeof(struct UTrapframe));
+    set_wp(true);
+    switch_address_space(old);
+
+    /* Reset in_page_fault flag */
+    // LAB 9: Your code here:
+    if (envs->env_tf.tf_trapno == T_PGFLT)
+        in_page_fault = 0;
+
+    /* Rerun current environment */
+    // LAB 9: Your code here:
+    env_run(curenv);
+ret:
+	user_mem_assert(curenv, (void *)tf->tf_rsp, sizeof(struct UTrapframe), PROT_W | PROT_USER_);
+	print_trapframe(tf);
+	env_destroy(curenv);
+	panic("page_fault_handler is return");
 }

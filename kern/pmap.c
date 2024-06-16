@@ -293,6 +293,8 @@ page_ref(struct Page *node) {
         // получается мы будем ссылаться на 
         // дочерние элементы узла столько раз, сколько
         // элементов со счётчиком ссылок, равным 0.
+        // это нужно для того, чтобы сделать нашу
+        // ноду последней - то есть сделать её листом в дереве
         page_ref(node->left);
         page_ref(node->right);
     }
@@ -765,8 +767,9 @@ dump_page_table(pte_t *pml4) {
     }
 
 /**
+ * @brief
  * алоцируем страницу памяти размером 0x40000 =
- * = 262144, преобразуя указатель на значение физического адреса,
+ * = 262144, преобразуя указатель на значение **физического** адреса,
  * соотвествующего данной странице.
 */
 inline static int
@@ -880,8 +883,8 @@ memcpy_page(struct AddressSpace *dst, uintptr_t va, struct Page *page) {
     // LAB 7: Your code here
     // отключаем защиту от записи
     set_wp(false);
-    // получаем текущее адресное пространство, загружая в 
-    // current_page текущее адресное пространство.
+    // получаем текущее адресное пространство, 
+    // делая dst адресное пространство актуальным текущим адресным пространством.
     struct AddressSpace *old_asp = switch_address_space(dst);
     // копируем с физического адреса страницы на её виртуальный адрес её содержимое.
     nosan_memcpy((void *)va, KADDR(page2pa(page)), CLASS_SIZE(page->class));
@@ -1215,7 +1218,6 @@ alloc_page(int class, int flags) {
                 goto found;
         }
     }
-    cprintf("RETURN NULL =(\n");
     return NULL;
 
 found:
@@ -1688,20 +1690,28 @@ init_address_space(struct AddressSpace *space) {
     /* Allocte page table with alloc_pt into space->cr3
      * (remember to clean flag bits of result with PTE_ADDR) */
     // LAB 8: Your code here
+	pte_t page_table_entry = 0;
+    int result = alloc_pt(&page_table_entry);
+    assert(result != -E_NO_MEM);
 
-    /* Put its kernel virtual address to space->pml4 */
+    page_table_entry = PTE_ADDR(page_table_entry);
+
+    space->cr3 = page_table_entry;
+
+    /* put its kernel virtual address to space->pml4 */
     // LAB 8: Your code here
-
+	space->pml4 = KADDR(page_table_entry);
     /* Allocate virtual tree root node
-     * of type INTERMEDIATE_NODE with alloc_rescriptor() of type */
+     * of type INTERMEDIATE_NODE with alloc_rescriptor() */
     // LAB 8: Your code here
-
+	space->root = alloc_descriptor(INTERMEDIATE_NODE);
     /* Initialize UVPT */
     // LAB 8: Your code here
-
+    space->pml4[PML4_INDEX(UVPT)] = space->cr3 | PTE_P | PTE_U;
     /* Why this call is required here and what does it do? */
     propagate_one_pml4(space, &kspace);
     return 0;
+
 }
 
 /* Buffers for filler pages are statically allocated for simplicity
@@ -2149,7 +2159,23 @@ static uintptr_t user_mem_check_addr;
 int
 user_mem_check(struct Env *env, const void *va, size_t len, int perm) {
     // LAB 8: Your code here
-    return -E_FAULT;
+    const void *current_page = (void *)ROUNDDOWN(va, PAGE_SIZE);
+    const void *finish_page = va + len;
+    struct Page *user_root = env->address_space.root;
+
+    while (current_page < finish_page) {
+        struct Page *page = page_lookup_virtual(user_root, (uintptr_t)current_page, 0, 0);
+        if (!page->phy || (page->state & PAGE_PROT(perm)) != PAGE_PROT(perm)) {
+            user_mem_check_addr = (uintptr_t)(MAX(va, current_page));
+            return -E_FAULT;
+        }
+        current_page += PAGE_SIZE;
+    }
+    if ((uintptr_t)finish_page > MAX_USER_READABLE) {
+        user_mem_check_addr = MAX(MAX_USER_READABLE, (uintptr_t)current_page);
+        return -E_FAULT;
+    }
+    return 0;
 }
 
 void
