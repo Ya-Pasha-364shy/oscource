@@ -443,6 +443,10 @@ env_create(uint8_t *binary, size_t size, enum EnvType type) {
         panic("Can't load and bind process with binary\n");
     }
     // LAB 10: Your code here
+    if (type == ENV_TYPE_FS) {
+        new_process->env_tf.tf_rflags |= FL_IOPL_3;
+    }
+    return;
 }
 
 /* Frees env and all memory it uses */
