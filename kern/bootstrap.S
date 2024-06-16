@@ -52,7 +52,6 @@ _head64:
     leaq (pde2 + (PTE_P | PTE_W))(%rip), %rax
     stosq
 
-# kern/bootstrap.S
     # Setting the pgdir so that the LA=PA
     # Mapping first 1024mb of mem at KERN_BASE_ADDR
     movq $-PDP_ENTRY_COUNT, %rcx
@@ -68,7 +67,6 @@ _head64:
 
     # Update CR3 register
     leaq pml4(%rip), %rax
-# check:
     movq %rax, %cr3
 
     # Transition to high mem entry code and pass LoadParams address

@@ -17,7 +17,6 @@
 #include <kern/env.h>
 #include <kern/pmap.h>
 #include <kern/trap.h>
-#include <kern/monitor.h>
 
 #define WHITESPACE "\t\r\n "
 #define MAXARGS    16
@@ -26,6 +25,7 @@
 int mon_help(int argc, char **argv, struct Trapframe *tf);
 int mon_kerninfo(int argc, char **argv, struct Trapframe *tf);
 int mon_backtrace(int argc, char **argv, struct Trapframe *tf);
+int mon_greet(int argc, char **argv, struct Trapframe *tf);
 int mon_dumpcmos(int argc, char **argv, struct Trapframe *tf);
 int mon_start(int argc, char **argv, struct Trapframe *tf);
 int mon_stop(int argc, char **argv, struct Trapframe *tf);
@@ -45,6 +45,7 @@ static struct Command commands[] = {
         {"help", "Display this list of commands", mon_help},
         {"kerninfo", "Display information about the kernel", mon_kerninfo},
         {"backtrace", "Print stack backtrace", mon_backtrace},
+        {"greet", "Print greeting message", mon_greet},
         {"dumpcmos", "Display CMOS contents", mon_dumpcmos},
         {"timer_start", "Start timer", mon_start},
         {"timer_stop", "Stop timer", mon_stop},
@@ -78,31 +79,26 @@ mon_kerninfo(int argc, char **argv, struct Trapframe *tf) {
     return 0;
 }
 
-struct stackframe {
-    struct stackframe* rbp;
-    uint64_t rip;
-};
-
 int
 mon_backtrace(int argc, char **argv, struct Trapframe *tf) {
     // LAB 2: Your code here
-    struct stackframe* rbp_pointer = (struct stackframe*)read_rbp();
+    uint64_t rbp = read_rbp();
+    uint64_t rip = (uint64_t) * ((uint64_t *)rbp + 1);
     cprintf("Stack backtrace:\n");
-
-    while (rbp_pointer) {
-        struct Ripdebuginfo debug_info;
-        uint64_t* rip_pointer = (uint64_t *)rbp_pointer->rip;
-        // указатель на следующую инструкцию после вызова функции
-        if (0 == debuginfo_rip((uint64_t)rip_pointer, &debug_info)) {
-            cprintf("  rbp 000000%lx  rip 000000%lx\n", (uint64_t)rbp_pointer, (uint64_t)rip_pointer);
-            cprintf("    %s:%d: %s+%ld\n", debug_info.rip_file,
-                                           debug_info.rip_line, debug_info.rip_fn_name,
-                                           (uint64_t)rip_pointer - debug_info.rip_fn_addr - 5);
-        } else {
-            cprintf("    Information not available...\n");
-        }
-        rbp_pointer = rbp_pointer->rbp;
+    struct Ripdebuginfo info = {};
+    while (rbp != 0) {
+        cprintf("  rbp %016lx  rip %016lx\n", rbp, rip);
+        debuginfo_rip((uintptr_t)rip, &info);
+        cprintf("    %s:%d: %s+%d\n", info.rip_file, info.rip_line, info.rip_fn_name, info.rip_fn_namelen);
+        rbp = (uint64_t) * (uint64_t *)rbp;
+        rip = (uint64_t) * ((uint64_t *)rbp + 1);
     }
+    return 0;
+}
+
+int
+mon_greet(int argc, char **argv, struct Trapframe *tf) {
+    cprintf("Hello!\n");
     return 0;
 }
 
@@ -112,14 +108,17 @@ mon_backtrace(int argc, char **argv, struct Trapframe *tf) {
 int
 mon_start(int argc, char **argv, struct Trapframe *tf) {
     if (argc != 2) {
-		return 1;
-	}
-	timer_start(argv[1]);
+        return 1;
+    }
+    timer_start(argv[1]);
     return 0;
 }
 
 int
 mon_stop(int argc, char **argv, struct Trapframe *tf) {
+    if (argc != 1) {
+        return 1;
+    }
     timer_stop();
     return 0;
 }
@@ -127,16 +126,16 @@ mon_stop(int argc, char **argv, struct Trapframe *tf) {
 int
 mon_frequency(int argc, char **argv, struct Trapframe *tf) {
     if (argc != 2) {
-		return 1;
-	}
-	timer_cpu_frequency(argv[1]);
+        return 1;
+    }
+    timer_cpu_frequency(argv[1]);
     return 0;
 }
 
+// LAB 6: Your code here
 /* Implement memory (mon_memory) commands. */
 int
 mon_memory(int argc, char **argv, struct Trapframe *tf) {
-    // LAB 6: Your code here
     dump_memory_lists();
     return 0;
 }

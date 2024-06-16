@@ -76,17 +76,14 @@ _pgfault_upcall:
     # LAB 9: Your code here
     addq $16, %rsp
     POPA
-
     # Restore rflags from the stack.  After you do this, you can
     # no longer use arithmetic operations or anything else that
     # modifies rflags.
     # LAB 9: Your code here
     addq $8, %rsp
     popfq
-
     # Switch back to the adjusted trap-time stack.
     # LAB 9: Your code here
     popq %rsp
-
     # Return to re-execute the instruction that faulted.
     ret

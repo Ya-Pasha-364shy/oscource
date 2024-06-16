@@ -23,7 +23,7 @@ int32_t
 ipc_recv(envid_t *from_env_store, void *pg, size_t *size, int *perm_store) {
     // LAB 9: Your code here:
     if (pg == NULL) pg = (void *)MAX_USER_ADDRESS;
-
+ 
     int res = sys_ipc_recv(pg, PAGE_SIZE);
     if (res < 0) {
         if (from_env_store != NULL) *from_env_store = 0;

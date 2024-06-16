@@ -130,10 +130,8 @@ i386_init(void) {
 
     early_boot_pml4_init();
 
-    /* Initialize the console devices.
+    /* Initialize the console.
      * Can't call cprintf until after we do this! */
-    // Настройка COM-портов по скорости, установки битов,
-    // включение прерываний.
     cons_init();
 
     tsc_calibrate();
@@ -154,8 +152,6 @@ i386_init(void) {
     if (trace_init) cprintf("Framebuffer initialised\n");
 
     /* User environment initialization functions */
-    // инициализует все структуры в массиве envs, настраивает оборудование,
-    // для работы уровней привелегий 0 (ядро) и 3 (пользователь). 
     env_init();
 
     /* Choose the timer used for scheduling: hpet or pit */

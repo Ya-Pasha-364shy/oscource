@@ -3,6 +3,7 @@
 #include <kern/env.h>
 #include <kern/monitor.h>
 
+
 struct Taskstate cpu_ts;
 _Noreturn void sched_halt(void);
 
@@ -13,7 +14,7 @@ sched_yield(void) {
      *
      * Search through 'envs' for an ENV_RUNNABLE environment in
      * circular fashion starting just after the env was
-     * last running. Switch to the first such environment found.
+     * last running.  Switch to the first such environment found.
      *
      * If no envs are runnable, but the environment previously
      * running is still ENV_RUNNING, it's okay to
@@ -38,7 +39,9 @@ sched_yield(void) {
 			break;
 		}
 	}
+
     cprintf("Halt\n");
+
     /* No runnable environments,
      * so just halt the cpu */
     sched_halt();

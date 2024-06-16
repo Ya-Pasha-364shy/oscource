@@ -19,7 +19,6 @@
  */
 
 static const char *const error_string[MAXERROR] = {
-        [E_NO_ERROR] = "no error",
         [E_UNSPECIFIED] = "unspecified error",
         [E_BAD_ENV] = "bad environment",
         [E_INVAL] = "invalid parameter",
@@ -219,13 +218,12 @@ vprintfmt(void (*putch)(int, void *), void *put_arg, const char *fmt, va_list ap
             num = get_unsigned(&aq, lflag, zflag);
             /* base = 10; */
             goto number;
-        
-        case 'O': /* (unsigned) octal, uppercase */
-        case 'o': /* (unsigned) octal, lowercase */ {
+
+        case 'o': /* (unsigned) octal */
             num = get_unsigned(&aq, lflag, zflag);
             base = 8;
             goto number;
-        }
+            break;
 
         case 'p': /* pointer */
             putch('0', put_arg);
@@ -271,10 +269,10 @@ struct sprintbuf {
 
 static void
 sprintputch(int ch, struct sprintbuf *state) {
+    state->count++;
     if (state->start < state->end) {
         *state->start++ = ch;
     }
-    state->count++;
 }
 
 int

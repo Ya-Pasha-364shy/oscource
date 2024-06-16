@@ -19,6 +19,7 @@
  *
  * Why it is necessary?
  */
+
 uint8_t
 cmos_read8(uint8_t reg) {
     /* MC146818A controller */
@@ -73,7 +74,6 @@ rtc_timer_init(void) {
     cmos_write8(RTC_BREG, b);
 
     uint8_t a = cmos_read8(RTC_AREG);
-    /* прерывания раз в полсекунды */
     a |= 0x0F;
     cmos_write8(RTC_AREG, a);
 }

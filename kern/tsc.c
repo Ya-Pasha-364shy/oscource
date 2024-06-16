@@ -200,46 +200,42 @@ static uint64_t freq = 0;
 
 void
 timer_start(const char *name) {
-	for (int i = 0; i < MAX_TIMERS; i++) {
-		if (timertab[i].timer_name) {
-			if (!strcmp(timertab[i].timer_name, name)) {
-				timer_started = 1;
-                // Фиксируем ID таймера
-				timer_id = i;
-                // читаем из регистра TSC для получения времени старта таймера #i (получаем здесь число тактов в момент времени t1)
-				timer = read_tsc();
-                // hpet_cpu_frequency OR pmtimer_cpu_frequency - получаем частоту таймеров
-				freq = timertab[timer_id].get_cpu_freq();
-				break;
-			}
-		}
-	}
+    for (int i = 0; i < MAX_TIMERS; ++i) {
+        if (timertab[i].timer_name) {
+            if (!strcmp(timertab[i].timer_name, name)) {
+                timer_started = 1;
+                timer_id = i;
+                timer = read_tsc();
+                freq = timertab[timer_id].get_cpu_freq();
+                break;
+            }
+        }
+    }
 }
 
 void
 timer_stop(void) {
-	if (!timer_started) {
-		print_timer_error();
-		return;
-	}
+    if (!timer_started) {
+        print_timer_error();
+        return;
+    }
+    timer_started = 0;
     if (timer_id < 0) {
-		print_timer_error();
-		return;
-	}
+        print_timer_error();
+        return;
+    }
     timer_id = -1;
-	timer_started = 0;
-    // получаем число тактов в момент времени t2, вычисляем время.
-	print_time((read_tsc() - timer) / freq);
+    print_time((read_tsc() - timer) / freq);
 }
 
 void
 timer_cpu_frequency(const char *name) {
-	for (int i = 0; i < MAX_TIMERS; i++) {
-		if (timertab[i].timer_name) {
-			if (!strcmp(timertab[i].timer_name, name)) {
-				cprintf("%lu\n", timertab[i].get_cpu_freq());
-				break;
-			}
-		}
-	}
+    for (int i = 0; i < MAX_TIMERS; ++i) {
+        if (timertab[i].timer_name) {
+            if (!strcmp(timertab[i].timer_name, name)) {
+                cprintf("%lu\n", timertab[i].get_cpu_freq());
+                break;
+            }
+        }
+    }
 }
