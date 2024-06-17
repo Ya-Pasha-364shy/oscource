@@ -24,9 +24,13 @@ LIB_SRCFILES :=		$(LIB_SRCFILES) \
 			lib/fd.c \
 			lib/file.c \
 			lib/fprintf.c \
+			lib/spawn.c \
 			lib/pipe.c \
 			lib/wait.c \
 			lib/uvpt.c
+
+LIB_SRCFILES :=		$(LIB_SRCFILES) \
+			lib/vsyscall.c
 
 LIB_OBJFILES := $(patsubst lib/%.c, $(OBJDIR)/lib/%.o, $(LIB_SRCFILES))
 LIB_OBJFILES := $(patsubst lib/%.S, $(OBJDIR)/lib/%.o, $(LIB_OBJFILES))

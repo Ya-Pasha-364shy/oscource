@@ -2,6 +2,7 @@
 #include <inc/x86.h>
 #include <inc/assert.h>
 #include <inc/string.h>
+#include <inc/vsyscall.h>
 
 #include <kern/pmap.h>
 #include <kern/trap.h>
@@ -13,6 +14,7 @@
 #include <kern/kclock.h>
 #include <kern/picirq.h>
 #include <kern/timer.h>
+#include <kern/vsyscall.h>
 #include <kern/traceopt.h>
 
 static struct Taskstate ts;
@@ -153,6 +155,8 @@ trap_init(void) {
      * can legally happen during normal kernel
      * code execution */
     idt[T_PGFLT].gd_ist = 1;
+
+    // LAB 11: Your code here
 
     /* Per-CPU setup */
     trap_init_percpu();
@@ -295,7 +299,11 @@ trap_dispatch(struct Trapframe *tf) {
         rtc_check_status();
         pic_send_eoi(IRQ_CLOCK);
         sched_yield();
+        // LAB 12: Your code here
         return;
+        // LAB 11: Your code here
+        /* Handle keyboard (IRQ_KBD + kbd_intr()) and
+         * serial (IRQ_SERIAL + serial_intr()) interrupts. */
     default:
         print_trapframe(tf);
         if (!(tf->tf_cs & 3))
