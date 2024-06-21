@@ -32,8 +32,12 @@ struct Env *envs = env_array;
 struct Env *envs = NULL;
 #endif
 
+// критическая секция
+
 /* Virtual syscall page address */
-volatile int *vsys;
+// volatile int *vsys;
+// чтение не должно быть запущено раньше, чем запись.
+_Atomic(uint64_t) *vsys;
 
 /* Free environment list
  * (linked by Env->env_link) */
@@ -99,14 +103,14 @@ env_init(void) {
      * kzalloc_region only works with current_space != NULL */
     // LAB 12: Your code here
     size_t uvsys_size = ROUNDUP(sizeof(int) * NVSYSCALLS, PAGE_SIZE);
-    void* uvsys_mem = kzalloc_region(uvsys_size);
+    void *uvsys_mem = kzalloc_region(uvsys_size);
     assert(uvsys_mem != NULL);
 
     int res = map_region(&kspace, UVSYS, &kspace, (uintptr_t) uvsys_mem, uvsys_size, PROT_R | PROT_USER_);
     if (res < 0)
         panic("env_init: %i\n", res);
 
-    vsys = (volatile int*) uvsys_mem;
+    vsys = (_Atomic(uint64_t) *)uvsys_mem;
 
     /* Allocate envs array with kzalloc_region().
      * Don't forget about rounding.

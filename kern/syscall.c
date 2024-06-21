@@ -466,7 +466,9 @@ sys_gettime(void) {
 
 static void
 sys_monitor(void) {
+    struct AddressSpace *old = switch_address_space(&curenv->address_space);
     monitor(&(curenv->env_tf));
+    switch_address_space(old);
 }
 
 /*

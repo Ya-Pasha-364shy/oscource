@@ -17,6 +17,8 @@
 #include <kern/vsyscall.h>
 #include <kern/traceopt.h>
 
+#include <stdatomic.h>
+
 #ifdef CONFIG_KSPACE
 
     extern void clock_thdlr(void);
@@ -336,7 +338,8 @@ trap_dispatch(struct Trapframe *tf) {
         // LAB 12: Your code here
         assert(timer_for_schedule);
         timer_for_schedule->handle_interrupts();
-        vsys[VSYS_gettime] = gettime();
+        // вот здесь по часам определяется время (прерывания от часов)
+        atomic_store_explicit(&vsys[VSYS_gettime], gettime(), memory_order_relaxed);        
         sched_yield();
         return;
         // LAB 11: Your code here

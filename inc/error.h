@@ -5,7 +5,6 @@
 
 enum {
     /* Kernel error codes -- keep in sync with list in lib/printfmt.c. */
-    E_NO_ERROR = 0,
     E_UNSPECIFIED = 1,   /* Unspecified or unknown problem */
     E_BAD_ENV = 2,       /* Environment doesn't exist or otherwise */
                          /* cannot be used in requested action */

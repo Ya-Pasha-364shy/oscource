@@ -7,7 +7,7 @@ vsyscall(int num) {
     if (num >= NVSYSCALLS)
         return -E_INVAL;
 
-    return vsys[num];
+    return (uint64_t)atomic_load_explicit(&vsys[num], memory_order_relaxed);
 }
 
 int

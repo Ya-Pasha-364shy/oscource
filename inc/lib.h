@@ -38,7 +38,7 @@ void umain(int argc, char **argv);
 
 /* libmain.c or entry.S */
 extern const char *binaryname;
-extern const volatile int vsys[];
+extern _Atomic(uint64_t) vsys[];
 extern const volatile struct Env *thisenv;
 extern const volatile struct Env envs[NENV];
 
@@ -98,6 +98,8 @@ int sys_ipc_recv(void *rcv_pg, size_t size);
 int sys_gettime(void);
 
 int vsys_gettime(void);
+
+void sys_monitor(void);
 
 /* This must be inlined. Exercise for reader: why? */
 static inline envid_t __attribute__((always_inline))
