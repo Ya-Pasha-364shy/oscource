@@ -19,6 +19,11 @@
 #include <kern/kdebug.h>
 #include <kern/traceopt.h>
 
+#include <kern/pci.h>
+#include <kern/e1000.h>
+#include <kern/arp.h>
+#include <kern/tcp.h>
+
 void
 timers_init(void) {
     timertab[0] = timer_rtc;
@@ -153,6 +158,10 @@ i386_init(void) {
 
     /* User environment initialization functions */
     env_init();
+
+    pci_init();
+    initialize_arp_table();
+    tcp_init_vc();
 
     /* Choose the timer used for scheduling: hpet or pit */
     timers_schedule("hpet0");

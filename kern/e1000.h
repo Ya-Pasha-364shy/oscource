@@ -8,6 +8,7 @@
 #define E1000_BUFFER_SIZE 1518    // Same as ethernet packet size
 
 #define trace_packets 1
+#define trace_packet_processing 1
 
 // TX Descriptor
 struct tx_desc {

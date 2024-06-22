@@ -325,7 +325,7 @@ QEMUOPTS += -bios $(OVMF_FIRMWARE)
 # QEMUOPTS += -debugcon file:$(UEFIDIR)/debug.log -global isa-debugcon.iobase=0x402
 # e1000 support:
 QEMUOPTS += -netdev tap,id=net0,ifname=tap0i,script=no,downscript=no # specify your tap interface's name here
-QEMUOPTS += -device e1000,netdev=net0,mac=00:00:00:11:11:11
+QEMUOPTS += -device e1000,netdev=net0,mac=10:00:00:11:11:11
 QEMUOPTS += -object filter-dump,id=net0,netdev=net0,file=dump.dat
 
 define POST_CHECKOUT

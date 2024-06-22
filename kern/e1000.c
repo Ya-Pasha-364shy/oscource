@@ -124,10 +124,10 @@ e1000_attach(struct pci_func * pciFunction) {
     uint32_t num2 = E1000_REG(E1000_RAH);
     cprintf("MAC - %02x:%02x:%02x:%02x:%02x:%02x\n", num1 & 0xff, (num1 >> 8) & 0xff, (num1 >> 16) & 0xff, (num1 >> 24) & 0xff, num2 & 0xff, (num2 >> 8) & 0xff);
 
-    // Set RX Address Low and High as
-    // MAC address 00:00:00:11:11:11
+    // Set RX Address Low and High as:
+    // MAC address 10:00:00:11:11:11
     // because it's already done in qemu options
-    // E1000_REG(E1000_RAL) = 0x00000011;
+    // E1000_REG(E1000_RAL) = 0x10000011;
     // *(uint16_t *)&E1000_REG(E1000_RAH) = 0x1111;
 
     // Set Multicast Table Array
