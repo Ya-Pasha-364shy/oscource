@@ -644,7 +644,7 @@ nvme_cmd_rw(struct NvmeController *ctl, struct NvmeQueueAttributes *ioq, int opc
     // LAB 10: Your code here
 
     int err = nvme_submit_cmd(ctl, ioq);
-    if (err != NVME_OK) 
+    if (err != NVME_OK)
         return err;
 
     err = nvme_wait_completion(ctl, ioq, cid, 300);

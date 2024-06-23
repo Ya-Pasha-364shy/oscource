@@ -42,7 +42,6 @@ bc_pgfault(struct UTrapframe *utf) {
 
     if ((err = nvme_read(blockno * BLKSECTS, addr, BLKSECTS)))
         panic("bc_pgfault couldn't read the block: %i", err);
-
     return 1;
 }
 

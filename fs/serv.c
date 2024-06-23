@@ -227,22 +227,21 @@ serve_write(envid_t envid, union Fsipc *ipc) {
         cprintf("serve_write %08x %08x %08x\n", envid, req->req_fileid, (uint32_t)req->req_n);
 
     // LAB 10: Your code here
-
     struct OpenFile *o;
     int res = openfile_lookup(envid, req->req_fileid, &o);
-    if (res < 0) 
+    if (res < 0)
         return res;
 
     off_t max_off = req->req_n + o->o_fd->fd_offset;
     if (max_off > o->o_file->f_size)
     {
         res = file_set_size(o->o_file, max_off);
-        if (res < 0) 
+        if (res < 0)
             return res;
     }
 
     ssize_t resn = file_write(o->o_file, req->req_buf, req->req_n, o->o_fd->fd_offset);
-    if (resn < 0) 
+    if (resn < 0)
         return resn;
 
     o->o_fd->fd_offset += (off_t) resn;
