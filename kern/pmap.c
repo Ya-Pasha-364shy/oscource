@@ -32,7 +32,7 @@ static size_t free_desc_count;
 size_t max_memory_map_addr;
 /* Kernel address space */
 struct AddressSpace kspace;
-/* Currently active address space */
+/* Currently active address spcae */
 struct AddressSpace *current_space;
 /* Root node of physical memory tree */
 struct Page root;
@@ -84,32 +84,28 @@ list_init(struct List *list) {
 
 /*
  * Appends list element 'new' after list element 'list'
- * добавляем элемент new после элемента list. В начало списка.
  */
 inline static void __attribute__((always_inline))
 list_append(struct List *list, struct List *new) {
     // LAB 6: Your code here
+    new->next  = list->next;
+    list->next = new; 
+
     new->prev = list;
-    new->next = list->next;
-    list->next->prev = new;
-    list->next = new;
+    new->next->prev = new;
 }
 
 /*
  * Deletes list element from list.
  * NOTE: Use list_init() on deleted List element
- * Убираем элемент сразу после головы списка (с начала списка)
  */
 inline static struct List *__attribute__((always_inline))
 list_del(struct List *list) {
     // LAB 6: Your code here
-    if (!list || list_empty(list) == true) {
-        return NULL;
-    }
-    struct List *deleted = list;
-    list->prev->next = list->next;
     list->next->prev = list->prev;
-    list_init(deleted);
+    list->prev->next = list->next;
+
+    list_init(list);
 
     return list;
 }
@@ -167,11 +163,10 @@ free_desc_rec(struct Page *p) {
     }
 }
 
-/**
- * @brief
+/*
  * This function allocates child
  * node for given parent in physical memory tree
- * @param right indicated whether left or right child should
+ * right indicated whether left or right child should
  * be allocated.
  *
  * New child describes lower (for the left one)
@@ -182,7 +177,7 @@ free_desc_rec(struct Page *p) {
  * NOTE: Be careful with overflows
  * NOTE: Child node should have it's
  * reference counter to be equal either 0 or 1
- * depending on whether parent's `refc` is 0 or non-zero,
+ * depending on whether parent's refc is 0 or non-zero,
  * correspondingly.
  * HINT: Use alloc_descriptor() here
  */
@@ -192,26 +187,35 @@ alloc_child(struct Page *parent, bool right) {
     assert(parent);
 
     // LAB 6: Your code here
-    if (!parent->class) // 0 - last node
+    if (parent->class == 0) {
         return NULL;
- 
-    struct Page *new = NULL;
-    new = alloc_descriptor(parent->state);
-    if (right) {
-        parent->right = new;
-        new->addr = parent->addr + (1ULL << (parent->class - 1));
-    } else {
-        parent->left = new;
-        new->addr = parent->addr;
     }
-    // new->left = NULL; // will be NULL after alloc
-    // new->right = NULL;
-    new->parent = parent;
-    new->refc = parent->refc ? 1 : 0;
+
+    struct Page *new = alloc_descriptor(parent->state);
+
     new->class = parent->class - 1;
+    
+    new->left = NULL;
+    new->right = NULL;
+    new->parent = parent;
+
+    new->refc = parent->refc;
+    new->state = parent->state;
+
+    if (right)
+    {
+        new->addr = parent->addr + (1ULL << (parent->class - 1));
+        parent->right = new;
+    }
+    else
+    {
+        new->addr = parent->addr;
+        parent->left = new;
+    }
 
     return new;
 }
+
 
 /* Lookup physical memory node with given address and class */
 static struct Page *
@@ -273,11 +277,6 @@ page_lookup(struct Page *hint, uintptr_t addr, int class, enum PageState type, b
     return node;
 }
 
-/**
- * Функция для управления ссылкой на страницу физического дерева.
- * Используется для управления выделением физической памяти.
- * Ссылемся на лист.
-*/
 static void
 page_ref(struct Page *node) {
     if (!node) return;
@@ -287,21 +286,13 @@ page_ref(struct Page *node) {
      * so need to reference them recursively
      * when refc transitions from 0 to 1 */
     if (!node->refc++) {
-        // обновляем значение ноды
         list_del((struct List *)node);
         list_init((struct List *)node);
-        // получается мы будем ссылаться на 
-        // дочерние элементы узла столько раз, сколько
-        // элементов со счётчиком ссылок, равным 0.
         page_ref(node->left);
         page_ref(node->right);
     }
 }
 
-/**
- * Функция для управления ссылкой на страницу физического дерева.
- * Используется для управления выделением физической памяти.
-*/
 static void
 page_unref(struct Page *page) {
     if (!page) return;
@@ -397,10 +388,12 @@ page_lookup_virtual(struct Page *node, uintptr_t addr, int class, int alloc) {
     assert(class >= 0);
     assert_virtual(node);
 
+
     int nclass = MAX_CLASS;
     while (nclass > class) {
         assert(nclass > 0);
         bool right = addr & CLASS_SIZE(nclass - 1);
+
 
         struct Page **next = right ? &node->right : &node->left;
 
@@ -448,34 +441,44 @@ page_lookup_virtual(struct Page *node, uintptr_t addr, int class, int alloc) {
 
 static void
 attach_region(uintptr_t start, uintptr_t end, enum PageState type) {
-    if (trace_memory_more) {
+    if (trace_memory_more)
         cprintf("Attaching memory region [%08lX, %08lX] with type %d\n", start, end - 1, type);
-    }
+    int class = 0, res = 0;
 
-    /**
-     * Присоединяет произольный регион памяти к физическому дереву,
-     * разбивая этот регион на страницы, выровненные на
-     * адреса степени 2 и имеющие размер кратный степени 2.
-     * Данная функция использует page_lookup для аллокации новой страницы
-     * с параметром alloc равным 1
-    */
-    int class;
-    // адреса должны быть выровнены по степени двойки 
+    (void)class;
+    (void)res;
+
     start = ROUNDDOWN(start, CLASS_SIZE(0));
     end = ROUNDUP(end, CLASS_SIZE(0));
 
     // LAB 6: Your code here
-    while (start < end) {
-         class = -1;
-         while (!(start & CLASS_MASK(class + 1)) && start + CLASS_SIZE(class + 1) <= end) {
-             ++class;
-         }
- 
-         if (class == -1) {
-            break;
+    while (start < end)
+    {
+        int class = 0;
+
+        while (class < MAX_CLASS)
+        {
+            if (start & CLASS_MASK(class))
+                break;
+            else 
+                class++;
         }
-        // inside alloc == true
-        page_lookup(NULL, start, class, type, true); // assert inside if alloc
+
+        class--;
+
+        while (class >= 0)
+        {
+            if (start + CLASS_SIZE(class) <= end)
+                break;
+
+            class--;
+        }
+        
+        struct Page* allocated = page_lookup(NULL, start, class, type, 1);
+
+        if (allocated == NULL)
+            panic("page_lookup() failed. addr: %lu, class:%d, type: ALLOCATABLE_NODE, alloc:1 \n", start, class);
+    
         start += CLASS_SIZE(class);
     }
 }
@@ -635,80 +638,105 @@ check_virtual_tree(struct Page *page, int class) {
     }
 }
 
+static void spaces(int nspaces)
+{
+    for (unsigned iter = 0; iter < nspaces; iter++)
+        cputchar(' '); 
+}
+static void 
+dump_virtual_tree_rec(struct Page *node, int class, int nspaces) {
+
+    assert(node);
+    spaces(nspaces);
+    cprintf("VIRT: PAGE_PHY: %016lxh CLASS %dd STATE %06xh\n", (uint64_t) node->phy, class, node->state);
+
+    if (node->phy) {
+        spaces(nspaces);
+        cprintf("PHYS: ADDR: %016lxh CLASS %dd STATE %06xh REFC %dd\n", (uint64_t) page2pa(node->phy), 
+                node->phy->class, node->phy->state, node->phy->refc);
+    }
+
+    if (node->left) {
+        spaces(nspaces + 1);
+        cprintf("LEFT:\n");
+        dump_virtual_tree_rec(node->left, class - 1, nspaces + 1);
+    }
+
+    if (node->right) {
+        spaces(nspaces + 1);
+        cprintf("RIGHT:\n");
+        dump_virtual_tree_rec(node->right, class - 1, nspaces + 1);
+    }
+}
 /*
  * Pretty-print virtual memory tree
  */
 void
 dump_virtual_tree(struct Page *node, int class) {
     // LAB 7: Your code here
-    if ((node->state & NODE_TYPE_MASK) == MAPPING_NODE) {
-        cprintf("MAPPING_NODE: phy: %p, class: %d\n", (void *)PTE_ADDR(node->phy->addr), class);
-    }
-    if (node->left) {
-        dump_virtual_tree(node->left, class - 1);
-    }
-    if (node->right) {
-        dump_virtual_tree(node->right, class - 1);
-    }
+    dump_virtual_tree_rec(node, class, 0);
 }
 
 void
 dump_memory_lists(void) {
     // LAB 6: Your code here
-    // EFI_MEMORY_DESCRIPTOR *start = (void *)uefi_lp->MemoryMap;
-    // EFI_MEMORY_DESCRIPTOR *end = (void *)(uefi_lp->MemoryMap + uefi_lp->MemoryMapSize);
-    // uint64_t max_mem_addr = 0;
-    // uint64_t min_mem_addr = start->PhysicalStart;
-    // uint64_t mymax = min_mem_addr;
-    // uint64_t mymin = max_mem_addr;
-    // while (start < end) {
-    //     max_mem_addr = MAX(start->NumberOfPages * EFI_PAGE_SIZE + start->PhysicalStart, max_mem_addr);
-    //     min_mem_addr = MIN(start->PhysicalStart, min_mem_addr);
-    //     start = (void *)((uint8_t *)start + uefi_lp->MemoryMapDescriptorSize);
-    // }
-    // struct Page *page = NULL;
-    // for (int i = 0; i <= MAX_CLASS; i++) {
-    //     uint64_t cur_size = CLASS_SIZE(i);
-    //     uint64_t num = (max_mem_addr - min_mem_addr) / CLASS_SIZE(i);
-    //     if ((max_mem_addr - min_mem_addr) % CLASS_SIZE(i)) {
-    //         num = 1;
-    //     }
-    //     for (uint64_t j = 0; j < num; j++) {
-    //         if ((page = page_lookup(NULL, min_mem_addr + j * cur_size, i, ALLOCATABLE_NODE, 0)) && page->state == ALLOCATABLE_NODE) {
-    //             if (page->class == 0) {
-    //                 if (((uint64_t)page->addr << CLASS_BASE) > mymax) {
-    //                     mymax = ((uint64_t)page->addr << CLASS_BASE);
-    //                 } 
-    //                 if (((uint64_t)page->addr << CLASS_BASE) < mymin) {
-    //                     mymin = ((uint64_t)page->addr << CLASS_BASE);
-    //                 }
-    //             }
-    //         }
-    //     }
-    // }
-    // cprintf("physical page address: %lx - %lx\n", mymin, mymax);
+    unsigned memory_lists_num = (unsigned) sizeof(free_classes) / sizeof(free_classes[0]); 
 
-    for (int i = 0; i < MAX_CLASS; i++) {
-        cprintf("checking class %d\n", i);
-        struct Page *page = (void *)free_classes[i].next;
+    for (unsigned class = 0; class < memory_lists_num; class++)
+    {
+        cprintf("free_classes[%02d]: ", class);
 
-        if (list_empty(&page->head)) {
-            cprintf("----------------\n");
-            continue;
-        }
+        if (list_empty(free_classes + class))
+            cprintf("EMPTY \n");
+        else
+        {
+            cprintf("\n");
 
-        while (page != (void *)&free_classes[i]) {
-            cprintf("PA: 0x%016lx, Size: 0x%llx, refc=%d, phy=%p\n",
-                    (uintptr_t)page->addr << CLASS_BASE,
-                    CLASS_SIZE(page->class),
-                    page->refc,
-                    page->phy);
+            struct List* cur = free_classes[class].next;
+            unsigned ct = 0;
 
-            page = (void *)page->head.next;
+            while (cur != free_classes + class)
+            {
+                struct Page* page = (struct Page*) cur;
+                cprintf("\t page#%03d paddr:%p, page2pa: 0x%016lx class %02d,"
+                        " state:%x, refc:%u \n", ct, page, page2pa(page), 
+                        page->class, page->state, page->refc);
+
+                ct++;
+                cur = cur->next;
+            }
         }
     }
+}
 
-    return;
+static void 
+dump_pt_rec(pte_t* pt, int level)
+{
+    size_t pte_size  = 0;
+    size_t pte_count = 0;
+    switch(level)
+    {
+        case 4: { pte_size = 512 * GB; pte_count = PML4_ENTRY_COUNT; break; }
+        case 3: { pte_size = 1   * GB; pte_count = PDP_ENTRY_COUNT;  break; }
+        case 2: { pte_size = 2   * MB; pte_count = PD_ENTRY_COUNT;   break; }
+        case 1: { pte_size = 4   * KB; pte_count = PT_ENTRY_COUNT;   break; }
+        default: assert(0); 
+    }
+
+    for (unsigned iter = 0; iter < pte_count; iter++) {
+        if (pt[iter] & PTE_P) {
+            if (pt[iter] & PTE_PS && (pte_size == 2 * MB || pte_size == 1 * GB))
+                dump_entry(pt[iter], pte_size, 1);
+            else {
+                if (level > 1) {
+                    dump_entry(pt[iter], pte_size, 0);
+                    dump_pt_rec(KADDR(PTE_ADDR(pt[iter])), level - 1);
+                }
+                else
+                    dump_entry(pt[iter], pte_size, 1);
+            }
+        }
+    }
 }
 
 
@@ -721,62 +749,18 @@ dump_memory_lists(void) {
  */
 void
 dump_page_table(pte_t *pml4) {
+    uintptr_t addr = 0;
     cprintf("Page table:\n");
     // LAB 7: Your code here
-    // для всех PML4E (Page Map Level 4 Entry) из PML4 
-    for (size_t i = NUSERPML4; i < PML4_ENTRY_COUNT; ++i) {
-        // pdp - page direcotry pointer
-        pdpe_t *pdp = (pdpe_t *)KADDR(PTE_ADDR(pml4[i]));
-        // Для всех элементов PDPE из PDP 
-        for (size_t j = 0; i < PDP_ENTRY_COUNT; ++j) {
-            if (!(pdp[j] & PTE_P)) {
-                continue;
-            }
-            else if (pdp[j] & PTE_PS) {
-                dump_entry(pdp[j], 1 * GB, 0);
-                continue;
-            }
+    (void)addr;
+    dump_pt_rec(pml4, 4);
+}
 
-            // pd - page directory
-            pde_t *pd = (pde_t *)KADDR(PTE_ADDR(pdp[j]));
-            // для всех элементов pde из директории таблиц
-            for (size_t k = 0; k < PD_ENTRY_COUNT; ++k) {
-                if (pd[k] & PTE_PS) {
-                    // каждая директория таблиц занимает 2МБ
-                    dump_entry(pd[k], 2 * MB, 0);
-                    continue;
-                }
-                if (!(pd[k] & PTE_P)) {
-                    continue;
-                }
-                // pt - page table
-                pte_t *pt = (pte_t *)KADDR(PTE_ADDR(pd[k]));
-                // для всех страниц из таблицы страниц
-                for (size_t ii = 0; ii < PT_ENTRY_COUNT; ++ii) {
-                    if (!(pt[ii] & PTE_P)) {
-                        continue;
-                    }
-                    // печатаем адрес страницы, а также её права
-                    dump_entry(pt[ii], 4 * KB, 0);
-                }
-            }
-        }
-    }
-    }
-
-/**
- * алоцируем страницу памяти размером 0x40000 =
- * = 262144, преобразуя указатель на значение физического адреса,
- * соотвествующего данной странице.
-*/
 inline static int
 alloc_pt(pte_t *dst) {
     if (!(*dst & PTE_P) || (*dst & PTE_PS)) {
         struct Page *page = alloc_page(0, ALLOC_BOOTMEM);
-        if (page == NULL) {
-            cprintf("unable to alloc page !\n");
-            return -E_NO_MEM;
-        }
+        if (!page) return -E_NO_MEM;
 #ifdef SANITIZE_SHADOW_BASE
         assert(page2pa(page) + CLASS_SIZE(page->class) <= BOOT_MEM_SIZE);
 #endif
@@ -868,27 +852,18 @@ alloc_fill_pt(pte_t *dst, pte_t base, size_t step, size_t i0, size_t i1) {
  * destination page might be read-only
  *
  * TIP: switch_address_space, nosan_memcpy, and set_wp are used here
- * 
- * @param dst определяет адресное пространство
- * @param va вириуальный адрес, в который мы будем копировать
- * @param page по факту отображает физический адрес страницы
  */
 static void
 memcpy_page(struct AddressSpace *dst, uintptr_t va, struct Page *page) {
-    assert(current_space && dst);
+    assert(current_space);
+    assert(dst);
 
     // LAB 7: Your code here
-    // отключаем защиту от записи
-    set_wp(false);
-    // получаем текущее адресное пространство, загружая в 
-    // current_page текущее адресное пространство.
-    struct AddressSpace *old_asp = switch_address_space(dst);
-    // копируем с физического адреса страницы на её виртуальный адрес её содержимое.
+    struct AddressSpace *old = switch_address_space(dst);
+    set_wp(0);
     nosan_memcpy((void *)va, KADDR(page2pa(page)), CLASS_SIZE(page->class));
-    // меняем обратно на место
-    (void)switch_address_space(old_asp);
-    // выключаем защиту от записи
-    set_wp(true);
+    set_wp(1);
+    switch_address_space(old);
 }
 
 static void
@@ -906,11 +881,6 @@ tlb_invalidate_range(struct AddressSpace *spc, uintptr_t start, uintptr_t end) {
     }
 }
 
-/**
- * Убирает отображение (из дерева страниц ядра и из
- * аппаратной таблицы страниц) виртуальной страницы на
- * адресное пространство, переданном в качестве аргумента.
-*/
 static void
 unmap_page(struct AddressSpace *spc, uintptr_t addr, int class) {
     if (trace_memory) cprintf("<%p> Unmapping [%08lX, %08lX]\n",
@@ -973,14 +943,17 @@ unmap_page(struct AddressSpace *spc, uintptr_t addr, int class) {
      * or equal 2 MB.
      * Use remove_pt() here. remove_pt() can handle recursive removal.
      * TIP: this resembles closely unmapping code */
+
     // LAB 7: Your code here
-    size_t pdi0 = PD_INDEX(addr), pdi1 = PD_INDEX(end);
-    if (pdi0 > pdi1) {
+
+    size_t pdi0 = PD_INDEX(addr);
+    size_t pdi1 = PD_INDEX(end);
+
+    if (pdi0 > pdi1) 
         pdi1 = PD_ENTRY_COUNT;
-    }
+
     if (class >= 9) {
-        /* рекурсивно удаляем и рамапливаем страницу из page directory */
-        remove_pt(pd, addr, 2 * MB, pdi0, pdi1);
+        remove_pt(pd, addr, 2 * MB, pdpi0, pdpi1);
         goto finish;
     }
 
@@ -989,24 +962,27 @@ unmap_page(struct AddressSpace *spc, uintptr_t addr, int class) {
      * Then load appropriate page table kernel virtual address
      * to the pt pointer.
      * Use alloc_pt(), alloc_fill_pt(), KADDR here
-     * (just like is above for 1 GB pages)
+     * (just like is above for 1BG pages)
      */
+
     // LAB 7: Your code here
-    pte_t *pt = NULL;
-    if (!(pd[pdi0] & PTE_P)) {
+
+    if (!(pd[pdi0] & PTE_P))
         return;
-    } else if (pd[pdi0] & PTE_PS) {
+
+    else if (pd[pdi0] & PTE_PS) {
         pde_t old = pd[pdi0];
         res = alloc_pt(pd + pdi0);
-        assert(res == 0);
-        pt = KADDR(PTE_ADDR(pd[pdi0]));
+        assert(!res);
+        pte_t *pt = KADDR(PTE_ADDR(pd[pdi0]));
         res = alloc_fill_pt(pt, old & ~PTE_PS, 4 * KB, 0, PT_ENTRY_COUNT);
-        assert(res == 0);
 
-        inval_end = ROUNDDOWN(inval_end, 2 * MB);
         inval_start = ROUNDDOWN(inval_start, 2 * MB);
+        inval_end = ROUNDUP(inval_end, 2 * MB);
+        assert(!res);
     }
-    pt = KADDR(PTE_ADDR(pd[pdi0]));
+
+    pte_t *pt = KADDR(PTE_ADDR(pd[pdi0]));
 
     /* Unmap 4KB hw pages */
     size_t pti0 = PT_INDEX(addr), pti1 = PT_INDEX(end);
@@ -1023,11 +999,6 @@ finish:
     tlb_invalidate_range(spc, inval_start, inval_end);
 }
 
-/**
- * Добавляет отображение (в дерево страниц ядра (struct Page *root) и на
- * аппаратную таблицу страниц (pml4e_t *pml4) виртуальной страницу в
- * адресном пространстве, переданном в качестве аргумента.
-*/
 static int
 map_page(struct AddressSpace *spc, uintptr_t addr, struct Page *page, int flags) {
     assert(!(flags & PROT_LAZY) | !(flags & PROT_SHARE));
@@ -1072,10 +1043,8 @@ map_page(struct AddressSpace *spc, uintptr_t addr, struct Page *page, int flags)
 
     /* Allocate empty pdp if required */
     if (!(spc->pml4[pml4i0] & PTE_P)) {
-        if (alloc_pt(spc->pml4 + pml4i0) != 0) {
-            cprintf("unable to alloc pt\n");
+        if (alloc_pt(spc->pml4 + pml4i0) < 0)
             return -E_NO_MEM;
-        }
 
         if (pml4i0 >= NUSERPML4)
             propagate_pml4(spc);
@@ -1119,52 +1088,43 @@ map_page(struct AddressSpace *spc, uintptr_t addr, struct Page *page, int flags)
     size_t pdi0 = PD_INDEX(addr);
     size_t pdi1 = PD_INDEX(end);
 
-    if (pdi0 > pdi1) {
+    if (pdi0 > pdi1) 
         pdi1 = PD_ENTRY_COUNT;
-    }
-    if (page->class >= 9) {
+
+    if (page->class >= 9) 
         return alloc_fill_pt(pd, base, 2 * MB, pdi0, pdi1);
-    }
 
     /* Allocate empty pt or split 2MB page into 4KB pages if required and
      * calculate virtual address into pt.
      * alloc_pt(), alloc_fill_pt() are used here.
-     * TIP: Look at the code above doing the same thing for 1GB pages
-    */
+     * TIP: Look at the code above doing the same thing for 1GB pages */
+
     // LAB 7: Your code here
-    pte_t *pt = NULL;
-    if (!(pd[pdi0] & PTE_P) && alloc_pt(pd + pdi1) < 0) {
+
+    if (!(pd[pdi0] & PTE_P) && alloc_pt(pd + pdi0) < 0) 
         return -E_NO_MEM;
-    } else if (pd[pdi0] & PTE_PS) {
+
+    else if (pd[pdi0] & PTE_PS) {
         pde_t old = pd[pdi0];
-        // алоцируем страницу на 2MB, посредством page directory index 
-        if (alloc_pt(pd + pdi0) < 0) {
-            cprintf("unable to allocate a 2MB page\n");
+        if (alloc_pt(pd + pdi0) < 0) 
             return -E_NO_MEM;
-        }
-        // делим страницу 2MB на 4KB-страницы в данном случае не рекурсивно.
         pte_t *pt = KADDR(PTE_ADDR(pd[pdi0]));
-        if (alloc_fill_pt(pt, old & ~PTE_PS, 4 * KB, 0, PT_ENTRY_COUNT) < 0) {
-            cprintf("unable to split page on 4KB pages\n");
+        if (alloc_fill_pt(pt, old & ~PTE_PS, 4 * KB, 0, PT_ENTRY_COUNT) < 0) 
             return -E_NO_MEM;
-        }
     }
-    pt = KADDR(PTE_ADDR(pd[pdi0]));
+
+    pte_t *pt = KADDR(PTE_ADDR(pd[pdi0]));
 
     /* If requested region is larger than or equal to 4KB (at least one whole page) */
 
     size_t pti0 = PT_INDEX(addr), pti1 = PT_INDEX(end);
-    if (pti0 > pti1) {
+    if (pti0 > pti1)
         pti1 = PT_ENTRY_COUNT;
-    }
+
     /* Fill PT range if page size is larger than 4KB */
-    if (page->class >= 0) {
-        int res = alloc_fill_pt(pt, base, 4 * KB, pti0, pti1);
-        if (res < 0) {
-            cprintf("page range was bigger than 4KB and trying to split is failed\n");
-        }
-        return res;
-    }
+    if (page->class >= 0)
+        return alloc_fill_pt(pt, base, 4 * KB, pti0, pti1);
+
     /* We cannot allocate less than a page */
     assert(0);
 }
@@ -1191,9 +1151,7 @@ unmap_region(struct AddressSpace *dspace, uintptr_t dst, uintptr_t size) {
     }
 }
 
-/**
- * функция выделения физических страниц.
-*/
+/* Just allocate page, without mapping it */
 static struct Page *
 alloc_page(int class, int flags) {
     struct List *li = NULL;
@@ -1211,11 +1169,9 @@ alloc_page(int class, int flags) {
             peer = (struct Page *)li;
             assert(peer->state == ALLOCATABLE_NODE);
             assert_physical(peer);
-            if (!(flags & ALLOC_BOOTMEM) || page2pa(peer) + CLASS_SIZE(class) < BOOT_MEM_SIZE)
-                goto found;
+            if (!(flags & ALLOC_BOOTMEM) || page2pa(peer) + CLASS_SIZE(class) < BOOT_MEM_SIZE) goto found;
         }
     }
-    cprintf("RETURN NULL =(\n");
     return NULL;
 
 found:
@@ -1229,7 +1185,7 @@ found:
 
         struct PagePool *newpool = KADDR(page2pa(peer));
 #ifdef SANITIZE_SHADOW_BASE
-        /* Need to unpoison early to initiallize lists inplace */
+        /* Need to unpoison early to initialize lists in-place */
         if (current_space) platform_asan_unpoison(newpool, CLASS_SIZE(class));
 #endif
         ndesc = POOL_ENTRIES_FOR_SIZE(CLASS_SIZE(class));
@@ -1287,20 +1243,6 @@ addr_common_class(uintptr_t addr1, uintptr_t addr2) {
     return res;
 }
 
-/**
- * @brief
- * Делим адресное пространство, придавая каждой странице,
- * права, чтобы пользовательские процессы не могли залесть
- * в память ядра и испортить его данные, а также, чтобы
- * эти процессы были изолированы
- * 
- * @param dst адресное пространство ядра
- * @param dstart виртуальный адрес, с которого начинают делить адресное пр-во
- *  на страницы и выдавать им права 
- * @param pstart физический адрес
- * @param size размер отображаемой памяти
- * @param flags флаги доступа к памяти
-*/
 int
 map_physical_region(struct AddressSpace *dst, uintptr_t dstart, uintptr_t pstart, size_t size, int flags) {
     if (trace_memory) cprintf("Mapping physical region [%08lX, %08lX] to [%08lX, %08lX] (flags=%x)\n",
@@ -1325,20 +1267,11 @@ map_physical_region(struct AddressSpace *dst, uintptr_t dstart, uintptr_t pstart
         if (start & CLASS_SIZE(class)) {
             struct Page *page = page_lookup(NULL, pstart, class, PARTIAL_NODE, 1);
             if (flags & MAP_USER_MMIO) {
-                if (!page) {
-                    cprintf("[1] unsuccessfull try to alloc new page by physical address\n");
-                    return -E_NO_MEM;
-                }
-                if (page->refc) {
-                    cprintf("[1] page is dirty\n");
-                    return -E_NO_ENT;
-                }
+                if (!page) return -E_NO_MEM;
+                if (page->refc) return -E_NO_ENT;
             }
             assert(page);
-            if ((res = map_page(dst, start, page, flags)) < 0) {
-                cprintf("[1] invalid trying to mapping page into tree\n");
-                return res;
-            }
+            if ((res = map_page(dst, start, page, flags)) < 0) return res;
             start += CLASS_SIZE(class);
             pstart += CLASS_SIZE(class);
         }
@@ -1348,20 +1281,11 @@ map_physical_region(struct AddressSpace *dst, uintptr_t dstart, uintptr_t pstart
         while (start + CLASS_SIZE(class) <= end) {
             struct Page *page = page_lookup(NULL, pstart, class, PARTIAL_NODE, 1);
             if (flags & MAP_USER_MMIO) {
-                if (!page) {
-                    cprintf("[2] unsuccessfull try to alloc new page by physical address\n");
-                    return -E_NO_MEM;
-                }
-                if (page->refc) {
-                    cprintf("[2] page is dirty\n");
-                    return -E_NO_ENT;
-                }
+                if (!page) return -E_NO_MEM;
+                if (page->refc) return -E_NO_ENT;
             }
             assert(page);
-            if ((res = map_page(dst, start, page, flags)) < 0) {
-                cprintf("[2] invalid trying to mapping page into tree\n");
-                return res;
-            }
+            if ((res = map_page(dst, start, page, flags)) < 0) return res;
             assert_virtual(dst->root);
             start += CLASS_SIZE(class);
             pstart += CLASS_SIZE(class);
@@ -1672,15 +1596,45 @@ struct AddressSpace *
 switch_address_space(struct AddressSpace *space) {
     assert(space);
     // LAB 7: Your code here
-    if (space == current_space) {
-        return space;
-    } else {
-        struct AddressSpace *old_space = current_space;
-        current_space = space;
-        lcr3(current_space->cr3);
-
-        return old_space;
+    if(current_space == space) {
+        return current_space;
     }
+    struct AddressSpace * old = current_space;
+    current_space = space;
+    lcr3(current_space->cr3);
+
+    return old;
+}
+
+int
+init_address_space(struct AddressSpace *space) {
+    /* Allocte page table with alloc_pt into space->cr3
+     * (remember to clean flag bits of result with PTE_ADDR) */
+    // LAB 8: Your code here
+
+    pte_t pte = 0;
+    int res = alloc_pt(&pte);
+    if (res < 0) 
+        panic("init_address_space: %i \n", res);
+    space->cr3 = (uintptr_t) PTE_ADDR(pte);
+
+    /* Put its kernel virtual address to space->pml4 */
+    // LAB 8: Your code here
+    space->pml4 = (pml4e_t*) KADDR((physaddr_t) space->cr3);    
+
+    /* Allocate virtual tree root node
+     * of type INTERMEDIATE_NODE with alloc_rescriptor() of type */
+    // LAB 8: Your code here
+    space->root = alloc_descriptor(INTERMEDIATE_NODE);
+    assert(space->root != NULL);
+
+    /* Initialize UVPT */
+    // LAB 8: Your code here
+    space->pml4[PML4_INDEX(UVPT)] = space->cr3 | PTE_P | PTE_U;
+
+    /* Why this call is required here and what does it do? */
+    propagate_one_pml4(space, &kspace);
+    return 0;
 }
 
 /* Buffers for filler pages are statically allocated for simplicity
@@ -1703,17 +1657,13 @@ detect_memory(void) {
 
     /* Attach first page as reserved memory */
     // LAB 6: Your code here
-    // зарезервировали 2^12 = 4096 байт (4 KB)
-    attach_region(0, PAGE_SIZE, RESERVED_NODE);
+    attach_region(0, CLASS_SIZE(0), RESERVED_NODE);
 
     /* Attach kernel and old IO memory
      * (from IOPHYSMEM to the physical address of end label. end points the the
      *  end of kernel executable image.)*/
     // LAB 6: Your code here
-    attach_region(IOPHYSMEM, PADDR(end), RESERVED_NODE);
-    // между PAGE_SIZE и IOPHYSMEM есть свободный сегмент памяти, который ничем не занят
-    // VGA, Video bios, motherboard bios - эта память зарезервировна под нужды устройств ввода-вывода  
-    // attach_region(IOPHYSMEM, EXTPHYSMEM, RESERVED_NODE);
+    attach_region(IOPHYSMEM, (uintptr_t)end - KERN_BASE_ADDR, RESERVED_NODE);
 
     /* Detect memory via ether UEFI or CMOS */
     if (uefi_lp && uefi_lp->MemoryMap) {
@@ -1741,8 +1691,8 @@ detect_memory(void) {
             /* Attach memory described by memory map entry described by start
              * of type type*/
             // LAB 6: Your code here
-            // от старта и до конца помечаем память типом type
-            attach_region((uintptr_t) start->PhysicalStart, (uintptr_t) start->PhysicalStart + PAGE_SIZE * start->NumberOfPages, type);
+            attach_region(start->PhysicalStart, start->PhysicalStart + start->NumberOfPages * EFI_PAGE_SIZE, type);
+
             start = (void *)((uint8_t *)start + uefi_lp->MemoryMapDescriptorSize);
         }
 
@@ -1943,43 +1893,40 @@ init_memory(void) {
      * and KASAN shadow memory regions to new kernel address space.
      * Allocated memory should not be touches until address space switch */
 
-    /* Map physical memroy onto kernel address space weakly... */
+    /* Map physical memory onto kernel address space weakly... */
     /* NOTE We cannot use map_region to map memory allocated with ALLOC_WEAK */
 
     // LAB 7: Your code here
     // NOTE: You need to check if map_physical_region returned 0 everywhere! (and panic otherwise)
     // Map [0, max_memory_map_addr] to [KERN_BASE_ADDR, KERN_BASE_ADDR + max_memory_map_addr] as RW- + ALLOC_WEAK
+
     if (map_physical_region(&kspace, KERN_BASE_ADDR, 0, max_memory_map_addr - 0, PROT_R | PROT_W | ALLOC_WEAK) < 0)
-        panic("Cannot map physical region at %p of size %zd",
-              (void *)KERN_BASE_ADDR, max_memory_map_addr - 0);
+        panic("Cannot map physical region at %p of size %zd", (void *)KERN_BASE_ADDR, max_memory_map_addr - 0);
+
+    /* ...and make kernel .text section executable: */
+
+    // LAB 7: Your code here
+    // Map [PADDR(__text_start);PADDR(__text_end)] to [__text_start, __text_end] as RW-
 
     extern char __text_end[], __text_start[];
     assert(!((uintptr_t)__text_start & CLASS_MASK(0)));
     assert(__text_end - __text_start < MAX_LOW_ADDR_KERN_SIZE);
     assert((uintptr_t)(end - KERN_BASE_ADDR) < MIN(BOOT_MEM_SIZE, max_memory_map_addr));
 
-    /* ...and make kernel .text section executable: */
+    if (map_physical_region(&kspace, (uintptr_t)__text_start, PADDR(__text_start), PADDR(__text_end) - PADDR(__text_start), PROT_RWX) < 0)
+        panic("Cannot map physical region at %p of size %zd", (void *)__text_start, PADDR(__text_end) - PADDR(__text_start));
 
-    // LAB 7: Your code here
-    // Map [PADDR(__text_start);PADDR(__text_end)] to [__text_start, __text_end] as RW-
-    if (map_physical_region(&kspace, (uintptr_t)__text_start, PADDR(__text_start), PADDR(__text_end) - PADDR(__text_start), PROT_RWX) < 0)  {
-        panic("Cannot map physical region at %p of size %zd",
-              (void *)__text_start, PADDR(__text_end) - PADDR(__text_start));
-    }
     /* Allocate kernel stacks */
 
     // LAB 7: Your code here
     // Map [PADDR(bootstack), PADDR(bootstack) + KERN_STACK_SIZE] to [KERN_STACK_TOP - KERN_STACK_SIZE, KERN_STACK_TOP] as RW-
-    if (map_physical_region(&kspace, KERN_STACK_TOP - KERN_STACK_SIZE, PADDR(bootstack), KERN_STACK_SIZE, PROT_R | PROT_W) < 0) {
-        panic("Cannot map physical region at %p of size %zd",
-        (void *)KERN_STACK_TOP - KERN_STACK_SIZE, (size_t)KERN_STACK_SIZE);
-    }
-
     // Map [PADDR(pfstack), PADDR(pfstack) + KERN_PF_STACK_SIZE] to [KERN_PF_STACK_TOP - KERN_PF_STACK_SIZE, KERN_PF_STACK_TOP] as RW-
-    if (map_physical_region(&kspace, KERN_PF_STACK_TOP - KERN_PF_STACK_SIZE, PADDR(pfstack), KERN_PF_STACK_SIZE, PROT_R | PROT_W) < 0) {
-        panic("Cannot map physical region at %p of size %zd",
-              (void *)(KERN_PF_STACK_TOP - KERN_PF_STACK_SIZE), (size_t)KERN_PF_STACK_SIZE);
-    }
+    
+    if (map_physical_region(&kspace, KERN_STACK_TOP - KERN_STACK_SIZE, PADDR(bootstack), KERN_STACK_SIZE, PROT_R | PROT_W) < 0)
+        panic("Cannot map physical region at %p of size %zd", (void *)KERN_STACK_TOP - KERN_STACK_SIZE, (size_t)KERN_STACK_SIZE);
+
+    if (map_physical_region(&kspace, KERN_PF_STACK_TOP - KERN_PF_STACK_SIZE, PADDR(pfstack), KERN_PF_STACK_SIZE, PROT_R | PROT_W) < 0)
+        panic("Cannot map physical region at %p of size %zd", (void *)(KERN_PF_STACK_TOP - KERN_PF_STACK_SIZE), (size_t)KERN_PF_STACK_SIZE);
 
 #ifdef SANITIZE_SHADOW_BASE
     init_shadow_pre();
@@ -1992,11 +1939,10 @@ init_memory(void) {
             // LAB 7: Your code here
             // Map [mstart->PhysicalStart, mstart->PhysicalStart+mstart->NumberOfPages*PAGE_SIZE] to
             //     [mstart->VirtualStart, mstart->VirtualStart+mstart->NumberOfPages*PAGE_SIZE] as RW-
-            if (map_physical_region(&kspace, mstart->VirtualStart, mstart->PhysicalStart,
-                                    mstart->NumberOfPages*PAGE_SIZE, PROT_R | PROT_W) < 0) {
+            if (map_physical_region(&kspace, mstart->VirtualStart, mstart->PhysicalStart, 
+                                    mstart->NumberOfPages*PAGE_SIZE, PROT_R | PROT_W) < 0)
                 panic("Cannot map physical region at %p of size %zd", 
-                        (void *)mstart->VirtualStart, (size_t)(mstart->NumberOfPages*PAGE_SIZE));
-            }
+                    (void *)mstart->VirtualStart, (size_t)(mstart->NumberOfPages*PAGE_SIZE));
         }
     }
 
@@ -2016,7 +1962,8 @@ init_memory(void) {
     efer |= EFER_NXE;
     wrmsr(EFER_MSR, efer);
 
-    for (size_t i = 0; i < CLASS_SIZE(MAX_ALLOCATION_CLASS); i++) assert(!zero_page_raw[i]);
+    for (size_t i = 0; i < CLASS_SIZE(MAX_ALLOCATION_CLASS); i++)
+        assert(!zero_page_raw[i]);
 
     switch_address_space(&kspace);
 
@@ -2024,7 +1971,7 @@ init_memory(void) {
     nosan_memset(one_page_raw, 0xFF, CLASS_SIZE(MAX_ALLOCATION_CLASS));
 
     /* Perform global constructor initialisation (e.g. asan)
-    * This must be done as early as possible */
+     * This must be done as early as possible */
     extern void (*__ctors_start)();
     extern void (*__ctors_end)();
     void (**ctor)() = &__ctors_start;
@@ -2032,9 +1979,11 @@ init_memory(void) {
 
 #ifdef SANITIZE_SHADOW_BASE
     unpoison_meta(&root);
+    platform_asan_unpoison((void*) (KERN_PF_STACK_TOP - KERN_PF_STACK_SIZE), KERN_PF_STACK_SIZE);
+    platform_asan_unpoison((void*) (KERN_STACK_TOP - KERN_STACK_SIZE), KERN_STACK_SIZE);
 #endif
 
-    /* Traps needs to be initiallized here
+    /* Traps needs to be initialized here
      * to alloc #PF to be handled during lazy allocation */
     trap_init();
 
@@ -2048,65 +1997,104 @@ init_memory(void) {
             assert(*(volatile int *)mstart->VirtualStart == expected);
         }
     }
-    /* Map the rest of memory regions after initiallizing shadow memory */
+    /* Map the rest of memory regions after initializing shadow memory */
 
     // LAB 7: Your code here
     // Map [FRAMEBUFFER, FRAMEBUFFER + uefi_lp->FrameBufferSize] to
     //     [uefi_lp->FrameBufferBase, uefi_lp->FrameBufferBase + uefi_lp->FrameBufferSize] RW- + PROT_WC
-    if (map_physical_region(&kspace, FRAMEBUFFER, uefi_lp->FrameBufferBase,
-                            uefi_lp->FrameBufferSize, PROT_R | PROT_W | PROT_WC) < 0)
-    {
-        panic("Cannot map physical region at %p of size %zd", 
-              (void *)(uefi_lp->FrameBufferBase), (size_t)(uefi_lp->FrameBufferSize));
-    }
-    
     // Map [X86ADDR(KERN_BASE_ADDR),MIN(MAX_LOW_ADDR_KERN_SIZE, max_memory_map_addr)] to
     //     [0, MIN(MAX_LOW_ADDR_KERN_SIZE, max_memory_map_addr)] as RW + ALLOC_WEAK
-    if (map_physical_region(&kspace, X86ADDR(KERN_BASE_ADDR), 0,
-                            MIN(MAX_LOW_ADDR_KERN_SIZE, max_memory_map_addr), PROT_R | PROT_W | ALLOC_WEAK) < 0)
-    {
-        panic("Cannot map physical region at %p of size %zd", 
-              (void *)0, MIN(MAX_LOW_ADDR_KERN_SIZE, max_memory_map_addr) - X86ADDR(KERN_BASE_ADDR));
-    }
-
     // Map [X86ADDR((uintptr_t)__text_start),ROUNDUP(X86ADDR((uintptr_t)__text_end), CLASS_SIZE(0))] to
     //     [PADDR(__text_start), ROUNDUP(__text_end, CLASS_SIZE(0))] as R-X
-    if (map_physical_region(&kspace, X86ADDR((uintptr_t)__text_start), 
-                            PADDR(__text_start), ROUNDUP(X86ADDR((uintptr_t)__text_end),
-                            CLASS_SIZE(0)) - X86ADDR((uintptr_t)__text_start), PROT_R | PROT_X) < 0)
-    {
-        panic("Cannot map physical region at %p of size %zd", 
-                (void *)PADDR(__text_start), ROUNDUP(X86ADDR((uintptr_t)__text_end), CLASS_SIZE(0)) - X86ADDR((uintptr_t)__text_start));
-    }
-
     // Map [X86ADDR(KERN_STACK_TOP - KERN_STACK_SIZE), KERN_STACK_TOP] to
     //     [PADDR(bootstack), PADDR(boottop)] as RW-
-    if (map_physical_region(&kspace, X86ADDR(KERN_STACK_TOP - KERN_STACK_SIZE),
-                            PADDR(bootstack), PADDR(bootstacktop) - PADDR(bootstack), 
-                            PROT_R | PROT_W) < 0)
-    {
-        panic("Cannot map physical region at %p of size %zd", 
-                (void *)PADDR(bootstack), (size_t)(PADDR(bootstacktop) - PADDR(bootstack)));
-    }
-
     // Map [X86ADDR(KERN_PF_STACK_TOP - KERN_PF_STACK_SIZE), KERN_PF_STACK_TOP] to
     //     [PADDR(pfstack), PADDR(pfstacktop)] as RW-
-    if (map_physical_region(&kspace, X86ADDR(KERN_PF_STACK_TOP - KERN_PF_STACK_SIZE),
-                            PADDR(pfstack), PADDR(pfstacktop) - PADDR(pfstack), PROT_R | PROT_W) < 0)
-    {
+
+    if (map_physical_region(&kspace, FRAMEBUFFER, uefi_lp->FrameBufferBase, uefi_lp->FrameBufferSize, 
+                            PROT_R | PROT_W | PROT_WC) < 0)
+        panic("Cannot map physical region at %p of size %zd", 
+                (void *)(uefi_lp->FrameBufferBase), (size_t)(uefi_lp->FrameBufferSize));
+    
+    if (map_physical_region(&kspace, X86ADDR(KERN_BASE_ADDR), 0, MIN(MAX_LOW_ADDR_KERN_SIZE, max_memory_map_addr), 
+                            PROT_R | PROT_W | ALLOC_WEAK) < 0)
+        panic("Cannot map physical region at %p of size %zd", 
+                (void *)0, MIN(MAX_LOW_ADDR_KERN_SIZE, max_memory_map_addr) - X86ADDR(KERN_BASE_ADDR));
+
+    if (map_physical_region(&kspace, X86ADDR((uintptr_t)__text_start), PADDR(__text_start), 
+                            ROUNDUP(X86ADDR((uintptr_t)__text_end), CLASS_SIZE(0)) - X86ADDR((uintptr_t)__text_start), 
+                            PROT_R | PROT_X) < 0)
+        panic("Cannot map physical region at %p of size %zd", 
+                (void *)PADDR(__text_start), ROUNDUP(X86ADDR((uintptr_t)__text_end), CLASS_SIZE(0)) - X86ADDR((uintptr_t)__text_start));
+
+    if (map_physical_region(&kspace, X86ADDR(KERN_STACK_TOP - KERN_STACK_SIZE), PADDR(bootstack), 
+                            PADDR(bootstacktop) - PADDR(bootstack), PROT_R | PROT_W) < 0)
+        panic("Cannot map physical region at %p of size %zd", 
+                (void *)PADDR(bootstack), (size_t)(PADDR(bootstacktop) - PADDR(bootstack)));
+
+    if (map_physical_region(&kspace, X86ADDR(KERN_PF_STACK_TOP - KERN_PF_STACK_SIZE), PADDR(pfstack), 
+                            PADDR(pfstacktop) - PADDR(pfstack), PROT_R | PROT_W) < 0)
         panic("Cannot map physical region at %p of size %zd", 
                 (void *)PADDR(pfstack),(size_t) (PADDR(pfstacktop) - PADDR(pfstack)));
-    }
 
     if (trace_memory_more) dump_page_table(kspace.pml4);
 
     check_physical_tree(&root);
-    if (trace_init) {
-        cprintf("Physical memory tree is still correct\n");
-    }
+    if (trace_init) cprintf("Physical memory tree is still correct\n");
 
     check_virtual_tree(kspace.root, MAX_CLASS);
-    if (trace_init) {
-        cprintf("Kernel virtual memory tree is correct\n");
+    if (trace_init) cprintf("Kernel virtual memory tree is correct\n");
+
+#ifdef SANITIZE_SHADOW_BASE
+    platform_asan_unpoison((void*) (USER_STACK_TOP - USER_STACK_SIZE), USER_STACK_SIZE);
+#endif
+}
+
+static uintptr_t user_mem_check_addr;
+
+/*
+ * This function checks whether given memory range
+ * has specified permissions and sets user_mem_check_addr
+ * to first non-applicable address
+ *
+ * HINT: Use page_lookup_virtual with class==0 alloc==0 to
+ * lookup the smallest existing page at the given address.
+ *
+ * Returned page should have associated physical page
+ * and permissions set as bits in state field.
+ *
+ * Return 0 if check is passed or -E_FAULT if region
+ * does not have enough permissions.
+ */
+int
+user_mem_check(struct Env *env, const void *va, size_t len, int perm) {
+    // LAB 8: Your code here
+    uintptr_t start = (uintptr_t) va;
+    uintptr_t end = start + len;
+
+    while (start < end)
+    {
+        struct Page* page = page_lookup_virtual(curenv->address_space.root, start, 0, 0);
+        assert(page);
+
+        if ((page->state & perm) != perm)
+        {
+            user_mem_check_addr = start;
+            return -E_FAULT;
+        }
+
+        start += PAGE_SIZE;
+    }
+
+    return 0;
+}
+
+void
+user_mem_assert(struct Env *env, const void *va, size_t len, int perm) {
+    if (user_mem_check(env, va, len, perm | PROT_USER_) < 0) {
+        cprintf("[%08x] user_mem_check assertion failure for "
+                "va=%016zx ip=%016zx\n",
+                env->env_id, user_mem_check_addr, env->env_tf.tf_rip);
+        env_destroy(env); /* may not return */
     }
 }

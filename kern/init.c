@@ -19,6 +19,11 @@
 #include <kern/kdebug.h>
 #include <kern/traceopt.h>
 
+#include <kern/pci.h>
+#include <kern/e1000.h>
+#include <kern/arp.h>
+#include <kern/tcp.h>
+
 void
 timers_init(void) {
     timertab[0] = timer_rtc;
@@ -130,10 +135,8 @@ i386_init(void) {
 
     early_boot_pml4_init();
 
-    /* Initialize the console devices.
+    /* Initialize the console.
      * Can't call cprintf until after we do this! */
-    // Настройка COM-портов по скорости, установки битов,
-    // включение прерываний.
     cons_init();
 
     tsc_calibrate();
@@ -154,9 +157,11 @@ i386_init(void) {
     if (trace_init) cprintf("Framebuffer initialised\n");
 
     /* User environment initialization functions */
-    // инициализует все структуры в массиве envs, настраивает оборудование,
-    // для работы уровней привелегий 0 (ядро) и 3 (пользователь). 
     env_init();
+
+    pci_init();
+    initialize_arp_table();
+    tcp_init_vc();
 
     /* Choose the timer used for scheduling: hpet or pit */
     timers_schedule("hpet0");
@@ -180,9 +185,12 @@ i386_init(void) {
     ENV_CREATE(TEST, ENV_TYPE_USER);
 #else
     /* Touch all you want. */
-    ENV_CREATE(user_hello, ENV_TYPE_USER);
+    ENV_CREATE(user_icode, ENV_TYPE_USER);
 #endif /* TEST* */
 #endif
+
+    /* Should not be necessary - drains keyboard because interrupt has given up. */
+    kbd_intr();
 
     /* Schedule and run the first user environment! */
     sched_yield();

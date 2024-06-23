@@ -7,9 +7,9 @@
 
 #define NCPU 1
 
-/* все процессы, как занятые, так и свободные */
+/* All environments */
 extern struct Env *envs;
-// текущий активный процесс
+/* Currently active environment */
 extern struct Env *curenv;
 extern struct Segdesc32 gdt[];
 
@@ -22,6 +22,13 @@ void env_destroy(struct Env *env);
 int envid2env(envid_t envid, struct Env **env_store, bool checkperm);
 _Noreturn void env_run(struct Env *e);
 _Noreturn void env_pop_tf(struct Trapframe *tf);
+
+typedef struct {
+    uint64_t start;
+    uint64_t end;
+} Bounds;
+
+static const int Loaded_segments_num = 3;
 
 #ifdef CONFIG_KSPACE
 extern void sys_exit(void);

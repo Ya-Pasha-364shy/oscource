@@ -31,6 +31,7 @@ test_alloc(uint8_t nbytes) {
     // LAB 5: Your code here:
 
     size_t nunits = (nbytes + sizeof(Header) - 1) / sizeof(Header) + 1;
+    spin_lock(&kernel_lock);
 
     /* no free list yet */
     if (!freep) {
@@ -42,7 +43,6 @@ test_alloc(uint8_t nbytes) {
 
         freep = &base;
     }
-    spin_lock(&kernel_lock);
 
     check_list();
 
@@ -69,6 +69,8 @@ test_alloc(uint8_t nbytes) {
             return NULL;
         }
     }
+
+    spin_unlock(&kernel_lock);
 }
 
 /* free: put block ap in free list */
@@ -81,11 +83,10 @@ test_free(void *ap) {
     /* Make allocator thread-safe with the help of spin_lock/spin_unlock. */
     // LAB 5: Your code here
 
-    /* freed block at start or end of arena */
-    Header *p = freep;
-
     spin_lock(&kernel_lock);
 
+    /* freed block at start or end of arena */
+    Header *p = freep;
     for (; !(bp > p && bp < p->next); p = p->next)
         if (p >= p->next && (bp > p || bp < p->next)) break;
 

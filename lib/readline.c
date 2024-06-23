@@ -10,7 +10,11 @@ static char buf[BUFLEN];
 char *
 readline(const char *prompt) {
     if (prompt) {
+#if JOS_KERNEL
         cprintf("%s", prompt);
+#else
+        fprintf(1, "%s", prompt);
+#endif
     }
 
     bool echo = iscons(0);
@@ -19,6 +23,8 @@ readline(const char *prompt) {
         int c = getchar();
 
         if (c < 0) {
+            if (c != -E_EOF)
+                cprintf("read error: %i\n", c);
             return NULL;
         } else if ((c == '\b' || c == '\x7F')) {
             if (i) {

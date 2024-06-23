@@ -3,6 +3,7 @@
 #include <inc/x86.h>
 #include <inc/stdio.h>
 #include <inc/string.h>
+#include <inc/assert.h>
 
 #include <kern/tsc.h>
 #include <kern/timer.h>
@@ -192,54 +193,120 @@ print_timer_error(void) {
  * Use print_timer_error function to print error. */
 
 // LAB 5: Your code here:
+// LAB 5: Your code here:
 
 static bool timer_started = 0;
 static int timer_id = -1;
 static uint64_t timer = 0;
 static uint64_t freq = 0;
 
+/* Enum value corresponds to index in timertab array. */
+enum TimerType {
+    RTC,
+    PIT,
+    PM,
+    HPET0,
+    HPET1,
+    UNDEF,
+};
+
+static enum TimerType
+get_timer_type(const char *name) {
+    assert(name);
+
+    if (strncmp(name, "hpet0", sizeof("hpet0")) == 0)
+        return HPET0;
+    if (strncmp(name, "hpet1", sizeof("hpet1")) == 0)
+        return HPET1;
+    if (strncmp(name, "pit", sizeof("pit")) == 0)
+        return PIT;
+    if (strncmp(name, "pm", sizeof("pm")) == 0)
+        return PM;
+    if (strncmp(name, "rtc", sizeof("rtc")) == 0)
+        return RTC;
+    return UNDEF;
+}
+
+static bool
+valid_timer_name(const char *name) {
+    if (!name) {
+        cprintf("Invalid timer.\n");
+        return false;
+    }
+    return true;
+}
+
+static bool
+supported_timer_type(enum TimerType type) {
+    switch (type) {
+    case RTC:
+        cprintf("Can't use RTC for this.\n");
+        return false;
+    case UNDEF:
+        cprintf("Unsupported timer type.\n");
+        return false;
+    default:
+        return true;
+    }
+}
+
+static uint64_t
+get_cpu_frequency(enum TimerType type) {
+    switch (type) {
+    case HPET0:
+    case HPET1:
+    case PIT:
+    case PM:
+        return timertab[type].get_cpu_freq();
+    default:
+        if (supported_timer_type(type))
+          assert(false);
+        return 0;
+    }
+}
+
 void
 timer_start(const char *name) {
-	for (int i = 0; i < MAX_TIMERS; i++) {
-		if (timertab[i].timer_name) {
-			if (!strcmp(timertab[i].timer_name, name)) {
-				timer_started = 1;
-                // Фиксируем ID таймера
-				timer_id = i;
-                // читаем из регистра TSC для получения времени старта таймера #i (получаем здесь число тактов в момент времени t1)
-				timer = read_tsc();
-                // hpet_cpu_frequency OR pmtimer_cpu_frequency - получаем частоту таймеров
-				freq = timertab[timer_id].get_cpu_freq();
-				break;
-			}
-		}
-	}
+    for (int i = 0; i < MAX_TIMERS; ++i) {
+        if (timertab[i].timer_name) {
+            if (!strcmp(timertab[i].timer_name, name)) {
+                timer_started = 1;
+                timer_id = i;
+                timer = read_tsc();
+                freq = timertab[timer_id].get_cpu_freq();
+                break;
+            }
+        }
+    }
 }
 
 void
 timer_stop(void) {
-	if (!timer_started) {
-		print_timer_error();
-		return;
-	}
-    if (timer_id < 0) {
-		print_timer_error();
-		return;
-	}
+    if (!timer_started) {
+        print_timer_error();
+        return;
+    }
+
+    uint64_t tsc = read_tsc();
+    uint64_t ticks = tsc - timer;
+
+    freq = get_cpu_frequency(timer_id);
+    uint64_t time = ticks / freq;
+
+    cprintf("%ld\n", time);
+
+    timer_started = false;
     timer_id = -1;
-	timer_started = 0;
-    // получаем число тактов в момент времени t2, вычисляем время.
-	print_time((read_tsc() - timer) / freq);
 }
 
 void
 timer_cpu_frequency(const char *name) {
-	for (int i = 0; i < MAX_TIMERS; i++) {
-		if (timertab[i].timer_name) {
-			if (!strcmp(timertab[i].timer_name, name)) {
-				cprintf("%lu\n", timertab[i].get_cpu_freq());
-				break;
-			}
-		}
-	}
+    for (int i = 0; i < MAX_TIMERS; ++i) {
+        if (timertab[i].timer_name) {
+            if (!strcmp(timertab[i].timer_name, name)) {
+                cprintf("%lu\n", timertab[i].get_cpu_freq());
+                break;
+            }
+        }
+    }
 }
