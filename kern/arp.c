@@ -27,7 +27,7 @@ initialize_arp_table() {
     entry = &arp_table[ARP_TABLE_MAX_SIZE - 1]; // it shall be just default MAC
 
     entry->source_ip = JHTONL(HOST_IP);
-    // aa:aa:aa:aa:aa:aa
+    // aa:aa:aa:aa:aa:aa - mac address of br0 interface
     uint8_t mac[6] = {0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa};
     memcpy(entry->source_mac, mac, 6);
     entry->state = STATIC_STATE;
@@ -68,8 +68,8 @@ update_arp_table(struct arp_hdr *arp_header) {
 
 int
 arp_reply(struct arp_hdr *arp_header) {
-    if (trace_packet_processing)
-        cprintf("Sending ARP reply\n");
+    if (trace_packet_processing) cprintf("Sending ARP reply\n");
+
     arp_header->opcode = ARP_REPLY;
     memcpy(arp_header->target_mac, arp_header->source_mac, 6);
     arp_header->target_ip = arp_header->source_ip;

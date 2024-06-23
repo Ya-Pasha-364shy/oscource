@@ -45,6 +45,7 @@ ip_send(struct ip_pkt* pkt, uint16_t length) {
     if (trace_packet_processing) cprintf("Sending IP packet\n");
     static uint16_t packet_id = 0;
 
+    struct eth_hdr e_hdr;
     struct ip_hdr* hdr = &pkt->hdr;
     hdr->ip_verlen = IP_VER_LEN;
     hdr->ip_tos = 0;
@@ -55,7 +56,6 @@ ip_send(struct ip_pkt* pkt, uint16_t length) {
     hdr->ip_header_checksum = 0;
     hdr->ip_header_checksum = ip_checksum((void*)pkt, IP_HEADER_LEN);
     packet_id++;
-    struct eth_hdr e_hdr;
     e_hdr.eth_type = JHTONS(ETH_TYPE_IP);
     // length - data length
     return eth_send(&e_hdr, (void*)pkt, sizeof(struct ip_hdr) + length);
@@ -79,6 +79,8 @@ ip_recv(struct ip_pkt* pkt) {
         return udp_recv(pkt);
     } else if (hdr->ip_protocol == IP_PROTO_ICMP) {
         return icmp_echo_reply(pkt);
+    } else {
+        if (trace_packet_processing) cprintf("this packet was recieved by unsupported protocol\n");
     }
 
     return 0;

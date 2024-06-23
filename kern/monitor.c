@@ -252,6 +252,8 @@ mon_eth_recv(int argc, char **argv, struct Trapframe *tf) {
                     cprintf("%x ", buf[i] & 0xff);
                 }
                 cprintf("\n");
+            } else {
+                break;
             }
         } else {
             cprintf("received status: %s%s\n", (len >= 0) ? "OK" : "ERROR", (len == 0) ? " EMPTY" : " ");
@@ -281,7 +283,7 @@ mon_http_test(int argc, char **argv, struct Trapframe *tf) {
 
     char *buf2 = "POST /hello.world HTTP/1.1";
     cprintf("%s\n", http_parse(buf2, strlen(buf2), reply, &reply_len) ? "FAULT" : "SUCCESS");
-    udp_send(reply, reply_len);
+    tcp_send(NULL, (void *)reply, reply_len);
 
     char *buf3 = "GET /hello.world HTTP/2";
     cprintf("%s\n", http_parse(buf3, strlen(buf3), reply, &reply_len) ? "FAULT" : "SUCCESS");

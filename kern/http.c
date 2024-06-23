@@ -27,6 +27,7 @@ http_parse(char *data, size_t length, char *reply, size_t *reply_len) {
                 hdr.URI.start = word_start;
                 hdr.URI.length = word_len;
             } else if (!hdr.HTTP_version.start) {
+                // По этой причине мы можем отправлять только пакеты по HTTP/1, используя TCP
                 if (strncmp(word_start, HTTP_VER, strlen(HTTP_VER)) && strncmp(word_start, HTTP_VER_COMPATIBLE, strlen(HTTP_VER_COMPATIBLE))) {
                     cprintf("Only %s and %s are supported!\n", HTTP_VER, HTTP_VER_COMPATIBLE);
                     return http_reply(505, NULL, reply, reply_len);
@@ -42,7 +43,7 @@ http_parse(char *data, size_t length, char *reply, size_t *reply_len) {
         cprintf("HTTP header incomplete!\n");
         return http_reply(400, NULL, reply, reply_len);
     }
-
+    // подготавливает ответ. А TCP его отправит
     return http_reply(200, OK_page, reply, reply_len);
 }
 
@@ -90,10 +91,8 @@ http_reply(int code, const char *page, char *reply, size_t *reply_len) {
         memcpy(cur_pos, page_len_text + page_len_text_start, 10 - page_len_text_start);
         cur_pos += (10 - page_len_text_start);
 
-        *cur_pos = '\n';
-        cur_pos++;
-        *cur_pos = '\n';
-        cur_pos++;
+        *cur_pos = '\n'; cur_pos++;
+        *cur_pos = '\n'; cur_pos++;
         memcpy(cur_pos, page, strlen(page));
         cur_pos += strlen(page);
     } else {

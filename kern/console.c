@@ -463,6 +463,12 @@ kbd_proc_data(void) {
             c += 'a' - 'A';
     }
 
+    /* Ctrl-C -- exit from monitor */
+    if (!(~shift & (CTL | ALT)) && c == 'C') {
+        cprintf("Exiting !\n");
+        breakpoint();
+    }
+
     /* Process special keys:
      * Ctrl-Alt-Del -- reboot */
     if (!(~shift & (CTL | ALT)) && c == KEY_DEL) {
@@ -508,7 +514,7 @@ static void
 cons_intr(int (*proc)(void)) {
     int ch;
 
-    while ((ch = (*proc)()) != -1) {
+    while ((ch = (*proc)()) >= 0) {
         if (!ch) continue;
         cons.buf[cons.wpos++] = ch;
         if (cons.wpos == CONSBUFSIZE) cons.wpos = 0;
@@ -523,6 +529,7 @@ cons_getc(void) {
      * so that this function works even when interrupts are disabled
      * (e.g., when called from the kernel monitor) */
     serial_intr();
+    // вот здесь мы можем обнаружить сигнал на выход из монитора
     kbd_intr();
 
     /* Grab the next character from the input buffer */

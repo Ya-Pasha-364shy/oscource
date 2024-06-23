@@ -16,7 +16,8 @@ icmp_echo_reply(struct ip_pkt* pkt) {
     memcpy((void*)&icmp_packet, (void*)pkt->data, size);
     
     struct icmp_hdr* hdr = &icmp_packet.hdr;
-    
+    struct ip_pkt result;
+
     if (hdr->msg_type != ECHO_REQUEST)
         return -E_UNS_ICMP_TYPE;
     if (hdr->msg_code != 0)
@@ -26,7 +27,6 @@ icmp_echo_reply(struct ip_pkt* pkt) {
     hdr->checksum = JNTOHS(hdr->checksum) + 0x0800;
     hdr->checksum = JHTONS(hdr->checksum);
 
-    struct ip_pkt result;
     result.hdr.ip_protocol = IP_PROTO_ICMP;
     result.hdr.ip_source_address = JHTONL(MY_IP);
     result.hdr.ip_destination_address = JHTONL(HOST_IP);
