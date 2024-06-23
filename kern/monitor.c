@@ -17,6 +17,7 @@
 #include <kern/env.h>
 #include <kern/pmap.h>
 #include <kern/trap.h>
+#include <kern/sched.h>
 
 #include <kern/ip.h>
 #include <kern/inet.h>
@@ -45,7 +46,6 @@ int mon_pagetable(int argc, char **argv, struct Trapframe *tf);
 int mon_virt(int argc, char **argv, struct Trapframe *tf);
 
 int mon_e1000_recv(int argc, char **argv, struct Trapframe *tf);
-int mon_eth_recv(int argc, char **argv, struct Trapframe *tf);
 int mon_e1000_tran(int argc, char **argv, struct Trapframe *tf);
 int mon_http_test(int argc, char **argv, struct Trapframe *tf);
 
@@ -69,7 +69,6 @@ static struct Command commands[] = {
         {"pagetable", "Display current page table", mon_pagetable},
         {"virt", "Display virtual memory tree", mon_virt},
         {"e1000_recv", "Test e1000 receive", mon_e1000_recv},
-        {"eth_recv", "Test eth receive", mon_eth_recv},
         {"e1000_tran", "Test e1000 transmit", mon_e1000_tran},
         {"http_test", "Test http parsing", mon_http_test}
 };
@@ -239,11 +238,17 @@ mon_e1000_recv(int argc, char **argv, struct Trapframe *tf) {
 }
 
 int
-mon_eth_recv(int argc, char **argv, struct Trapframe *tf) {
-    while (1) {
+mon_eth_recv(struct Trapframe *tf) {
+
+    int len = 0;
+    uint64_t cpu_freq = hpet_cpu_frequency();
+    uint64_t tsc0 = read_tsc(), tsc1;
+    uint64_t timeout = 30;
+
+    do {
         char buf[1000];
         e1000_listen();
-        int len = eth_recv(buf);
+        len = eth_recv(buf);
         if (trace_packets && len >= 0) {
             cprintf("received len: %d\n", len);
             if (len > 0) {
@@ -252,15 +257,17 @@ mon_eth_recv(int argc, char **argv, struct Trapframe *tf) {
                     cprintf("%x ", buf[i] & 0xff);
                 }
                 cprintf("\n");
-            } else {
-                break;
             }
         } else {
             cprintf("received status: %s%s\n", (len >= 0) ? "OK" : "ERROR", (len == 0) ? " EMPTY" : " ");
         }
         cprintf("\n");
-    }
-    return 0;
+
+        asm("pause");
+        tsc1 = read_tsc();
+    } while ((tsc1 - tsc0 < timeout * cpu_freq) || len >= 0);
+
+    sched_yield();
 }
 
 int

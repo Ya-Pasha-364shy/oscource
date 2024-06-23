@@ -514,19 +514,6 @@ load_icode(struct Env *env, uint8_t *binary, size_t size) {
     env->binary = binary;
     env->env_tf.tf_rip = (uintptr_t) elf_data->e_entry;
 
-    // int err = bind_functions(env, binary, size, image_start, image_end);
-    // if (err < 0)
-    //     panic("bind_functions: %i", err);
-
-    // ph = (struct Proghdr*)(binary + elf_data->e_phoff);
-    // for (unsigned iter = 0; iter < elf_data->e_phnum; iter++)
-    // {
-    //     unmap_region(&kspace, ph->p_va, ph->p_memsz);
-    //     ph += 1;
-    // }
-
-    // LAB 8: Your code here
-
     int res = map_region(&env->address_space, USER_STACK_TOP - USER_STACK_SIZE, NULL, 0, USER_STACK_SIZE, PROT_R | PROT_W | PROT_USER_ | ALLOC_ZERO);
     if (res < 0) 
         panic("load_icode: %i \n", res);
@@ -550,7 +537,7 @@ load_icode(struct Env *env, uint8_t *binary, size_t size) {
  * The new env's parent ID is set to 0.
  */
 void
-env_create(uint8_t *binary, size_t size, enum EnvType type) {
+env_create(uint8_t *binary, size_t size, enum EnvType type, bool need_work_concurent) {
     // LAB 3: Your code here
     // LAB 8: Your code here
     // LAB 10: Your code here
@@ -567,6 +554,13 @@ env_create(uint8_t *binary, size_t size, enum EnvType type) {
     // env->env_parent_id = 0;
     if (type == ENV_TYPE_FS)
         env->env_tf.tf_rflags |= FL_IOPL_3;
+
+    if (need_work_concurent == true) {
+        env->need_work_concurent = true;
+    } else {
+        env->need_work_concurent = false;
+    }
+
     return;    
 }
 
@@ -702,6 +696,9 @@ env_run(struct Env *env) {
     // LAB 8: Your code here
     if (curenv != env)
     {
+        // runing -> runnable -> runing
+        // runnable -> running
+
         if (curenv != NULL && curenv->env_status == ENV_RUNNING)
             curenv->env_status = ENV_RUNNABLE;
         

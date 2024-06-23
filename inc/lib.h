@@ -100,6 +100,7 @@ int sys_gettime(void);
 int vsys_gettime(void);
 
 void sys_monitor(void);
+void sys_ethernet_loop(void);
 
 /* This must be inlined. Exercise for reader: why? */
 static inline envid_t __attribute__((always_inline))

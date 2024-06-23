@@ -6,7 +6,8 @@ FSOFILES := 		$(OBJDIR)/fs/bc.o \
 			$(OBJDIR)/fs/serv.o \
 			$(OBJDIR)/fs/test.o \
 			$(OBJDIR)/fs/pci.o \
-			$(OBJDIR)/fs/nvme.o
+			$(OBJDIR)/fs/nvme.o \
+
 
 FSIMGTXTFILES :=	fs/newmotd \
 			fs/motd \
@@ -34,6 +35,7 @@ USERAPPS :=		$(OBJDIR)/user/init \
 			$(OBJDIR)/user/date \
 			$(OBJDIR)/user/vdate \
 			$(OBJDIR)/user/monitor \
+			$(OBJDIR)/user/ethernet_loop
 
 
 FSIMGFILES := $(FSIMGTXTFILES) $(USERAPPS)

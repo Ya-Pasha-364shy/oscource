@@ -467,7 +467,14 @@ sys_gettime(void) {
 static void
 sys_monitor(void) {
     struct AddressSpace *old = switch_address_space(&curenv->address_space);
-    monitor(&(curenv->env_tf));
+    monitor(&curenv->env_tf);
+    switch_address_space(old);
+}
+
+static void
+sys_ethernet_loop(void) {
+    struct AddressSpace *old = switch_address_space(&curenv->address_space);
+    (void)mon_eth_recv(&curenv->env_tf);
     switch_address_space(old);
 }
 
@@ -486,7 +493,7 @@ sys_region_refs(uintptr_t addr, size_t size, uintptr_t addr2, uintptr_t size2) {
 
     if (addr2 > MAX_USER_ADDRESS)
         return ref1;
-    else 
+    else            
         return ref1 - region_maxref(&curenv->address_space, addr2, size2);
     return 0;
 }
@@ -560,64 +567,10 @@ syscall(uintptr_t syscallno, uintptr_t a1, uintptr_t a2, uintptr_t a3, uintptr_t
             return (uintptr_t) sys_gettime();
         
         case SYS_monitor:
-            sys_monitor();
-            return 0;
+            sys_monitor(); return 0;
 
-        default:
-            return -E_NO_SYS;
-    }
-
-    switch(syscallno)
-    {
-        case SYS_cputs: 
-            return (uintptr_t) sys_cputs((const char*) a1, (size_t) a2); 
-
-        case SYS_cgetc: 
-            return (uintptr_t) sys_cgetc();
-        
-        case SYS_getenvid: 
-        
-        case SYS_env_destroy: 
-            return (uintptr_t) sys_env_destroy((envid_t) a1);
-
-        case SYS_alloc_region:
-            return (uintptr_t) sys_alloc_region((envid_t) a1, a2, (size_t) a3, (int) a4); 
-
-        case SYS_map_region:
-            return (uintptr_t) sys_map_region((envid_t) a1, a2, (envid_t) a3, a4, (size_t) a5, (int) a6);
-
-        case SYS_unmap_region:
-            return (uintptr_t) sys_unmap_region((envid_t) a1, a2, (size_t) a3);
-
-        case SYS_region_refs:
-            return (uintptr_t) sys_region_refs(a1, (size_t) a2, a3, a4);
-
-        case SYS_exofork:
-            return (uintptr_t) sys_exofork();
-
-        case SYS_env_set_status:
-            return (uintptr_t) sys_env_set_status((envid_t) a1, (int) a2);
-
-        case SYS_env_set_pgfault_upcall:
-            return (uintptr_t) sys_env_set_pgfault_upcall((envid_t) a1, (void*) a2);
-
-        case SYS_yield:
-        {
-            sys_yield();
-            return 0;
-        }
-
-        case SYS_ipc_try_send:
-            return (uintptr_t) sys_ipc_try_send((envid_t) a1, (uint32_t) a2, a3, (size_t) a4, (int) a5);
-        
-        case SYS_ipc_recv:
-            return (uintptr_t) sys_ipc_recv(a1, a2);
-
-        case SYS_map_physical_region:
-            return (uintptr_t) sys_map_physical_region(a1, (envid_t) a2, a3, (size_t) a4, (int) a5);
-
-        // case SYS_env_set_trapframe:
-        //     return (uintptr_t) sys_env_set_trapframe((envid_t) a1, (struct Trapframe *) a2);
+        case SYS_ethernet_loop:
+            sys_ethernet_loop(); return 0;
 
         default:
             return -E_NO_SYS;

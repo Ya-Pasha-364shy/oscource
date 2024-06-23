@@ -200,7 +200,7 @@ void acpi_enable(void);
 RSDP *get_rsdp(void);
 FADT *get_fadt(void);
 HPET *get_hpet(void);
-XSDT* get_xsdt(RSDP* rsdp);
+XSDT *get_xsdt(RSDP* rsdp);
 
 static const char RSDP_sign[8] = "RSD PTR ";
 static const char HPET_sign[4] = "HPET";
