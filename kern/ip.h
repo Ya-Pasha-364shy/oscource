@@ -41,7 +41,9 @@ int ip_recv(struct ip_pkt* pkt);
 #define IP_PROTO_TCP  6
 
 #define IP(a, b, c, d) ( ( ( ( a ) ) << 24 ) + ( ( b ) << 16 ) + ( ( c ) << 8 ) + ( d ) )
-#define MY_IP IP(172, 16, 0, 2)
-#define HOST_IP IP(172, 16, 0, 1)
+
+#define MY_IP        IP(172, 16, 0, 2)
+#define HOST_IP      IP(172, 16, 0, 1)
+#define BROADCAST_IP IP(172, 16, 0, 255)
 
 #endif

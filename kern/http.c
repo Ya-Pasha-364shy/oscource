@@ -6,6 +6,9 @@
 
 static const char *OK_page = "<!DOCTYPE html>\n<html><body><h1>Hello from JOS!</h1></body></html>";
 
+/**
+ * Функция-парсер HTTP-запроса 
+ */
 int
 http_parse(char *data, size_t length, char *reply, size_t *reply_len) {
     if (trace_packet_processing) cprintf("Parsing HTTP request\n");
@@ -47,6 +50,10 @@ http_parse(char *data, size_t length, char *reply, size_t *reply_len) {
     return http_reply(200, OK_page, reply, reply_len);
 }
 
+/**
+ * Функция-ответчик на http-запрос. Она собирает ответ на HTTP-запрос.
+ * Вызывается только после парсинга
+ */
 int
 http_reply(int code, const char *page, char *reply, size_t *reply_len) {
     if (trace_packet_processing) cprintf("Creating HTTP reply\n");

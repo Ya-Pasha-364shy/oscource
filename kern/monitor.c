@@ -254,18 +254,19 @@ is_time_over(uint64_t *a, uint64_t *b, uint64_t *timeout) {
 }
 
 int
-mon_eth_recv(struct Trapframe *tf) {
+mon_eth_recieve(struct Trapframe *tf) {
 
     int len = 0;
     uint64_t tsc0 = read_tsc(), tsc1 = 0;
-    uint64_t timeout = 30;
+    uint64_t timeout = 45;
     char buf[1000];
 
     do {
         memset(buf, 0, sizeof(buf));
 
-        e1000_listen();
-        len = eth_recv(buf);
+        while (e1000_timeout_listen(0.01)) {};
+        len = eth_recieve(buf);
+
         if (trace_packets && len >= 0) {
             cprintf("received len: %d\n", len);
             if (len > 0) {

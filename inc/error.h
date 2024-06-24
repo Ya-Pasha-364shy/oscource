@@ -32,6 +32,7 @@ enum {
     E_INV_CHS = 22,      /* Checksum is invalid */
     E_UNS_ICMP_TYPE = 23, /* Unsupported icmp message type */
     E_INV_ICMP_CODE = 24, /* Invalid icmp message code */
+    E_INV_SENDER    = 25,
     MAXERROR
 };
 

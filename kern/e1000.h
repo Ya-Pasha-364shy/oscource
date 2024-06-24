@@ -75,9 +75,13 @@ struct rx_desc {
 #define E1000_RXD_STAT_EOP 0x02 // End of Packet
 
 int e1000_attach(struct pci_func *pcif);
+
 int e1000_transmit(const char *buf, uint16_t len);
-int e1000_listen(void);
+int e1000_timeout_transmit(double timeout);
+
+void e1000_listen(void);
 int e1000_timeout_listen(double timeout);
+
 int e1000_receive(char *buf);
 
 #endif // JOS_KERN_E1000_H

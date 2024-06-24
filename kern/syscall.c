@@ -474,7 +474,7 @@ sys_monitor(void) {
 static void
 sys_ethernet_loop(void) {
     struct AddressSpace *old = switch_address_space(&curenv->address_space);
-    (void)mon_eth_recv(&curenv->env_tf);
+    (void)mon_eth_recieve(&curenv->env_tf);
     switch_address_space(old);
 }
 

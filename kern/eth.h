@@ -12,7 +12,7 @@ struct eth_hdr {
 
 const uint8_t *get_my_mac(void);
 int eth_send(struct eth_hdr* hdr, void* data, size_t len);
-int eth_recv(void* data);
+int eth_recieve(void* data);
 
 #define ETH_MAX_PACKET_SIZE 1500
 #define ETH_HEADER_LEN sizeof(struct eth_hdr)
