@@ -9,6 +9,10 @@
 
 struct tcp_virtual_channel tcp_vc[TCP_VC_NUM];
 
+/**
+ * Функция нахождения соотвествия порта входящего tcp-пакета и
+ * виртуального канала
+ */
 struct tcp_virtual_channel *
 match_tcp_vc(struct tcp_pkt *pkt) {
     for (int i = 0; i < TCP_VC_NUM; i++) {
@@ -19,12 +23,18 @@ match_tcp_vc(struct tcp_pkt *pkt) {
     return NULL;
 }
 
+/**
+ * Функция нахождения соответствия IP-адреса и виртуального канала
+ */
 int
 match_listen_ip(struct tcp_virtual_channel *vc, uint32_t src_ip) {
     // ACCEPT FROM ALL IP
     return 1;
 }
 
+/**
+ * Функция инициализации всех виртуальных каналов
+ */
 void
 tcp_init_vc() {
     tcp_vc[0].state = LISTEN;
@@ -43,8 +53,11 @@ tcp_init_vc() {
     }
 }
 
+/**
+ * Функция отправки пакета заданного размера по данному виртуальному каналу
+ */
 int
-tcp_send(struct tcp_virtual_channel* channel, struct tcp_pkt* pkt, size_t length) {
+tcp_send(struct tcp_virtual_channel *channel, struct tcp_pkt *pkt, size_t length) {
     if (trace_packet_processing) cprintf("Sending TCP packet\n");
 
     if (channel == NULL) {
@@ -84,6 +97,9 @@ tcp_send(struct tcp_virtual_channel* channel, struct tcp_pkt* pkt, size_t length
     return ip_send(&result, data_length);
 }
 
+/**
+ * Функция отправки ACK-пакета. Данный пакет может содержкать дополнительные флаги
+ */
 int
 tcp_send_ack(struct tcp_virtual_channel *vc, uint8_t flags) {
     struct tcp_pkt ack_pkt = {};
@@ -97,6 +113,10 @@ tcp_send_ack(struct tcp_virtual_channel *vc, uint8_t flags) {
     return rc;
 }
 
+/**
+ * Функция проверка последовательного номера ACK-последовательности.
+ * Значения должны быть когерентны как для виртуального канала, так и для последовательности
+ */
 int
 check_ack_seq(struct tcp_virtual_channel * vc, struct tcp_hdr ack_seq) {
     //cprintf("Ack=%u Seq=%u <== Ack=%u Seq=%u\n", vc->ack_seq.ack_num, vc->ack_seq.seq_num, (uint32_t)JNTOHL(ack_seq.ack_num), (uint32_t)JNTOHL(ack_seq.seq_num));
@@ -105,12 +125,16 @@ check_ack_seq(struct tcp_virtual_channel * vc, struct tcp_hdr ack_seq) {
            JNTOHL(ack_seq.ack_num) == vc->ack_seq.seq_num;
 }
 
+/**
+ * Функция-обработчик TCP-пакетов согласно логике ACK, SYN+ACK, ACK, ACK.
+ * http-запрос будет обрабатываться только после трёх-стороннего рукопожатия
+ */
 int
 tcp_process(struct tcp_pkt *pkt, uint32_t src_ip, uint16_t tcp_data_len) {
     if (trace_packet_processing) cprintf("Processing TCP packet\n");
     struct tcp_virtual_channel *vc = match_tcp_vc(pkt);
     if (vc == NULL) {
-        cprintf("No TCP VC match for packet\n");
+        cprintf("Unable to find virtual channel for this packet !!!\n");
         goto error;
     }
 
@@ -262,6 +286,9 @@ error:
     return -1;
 }
 
+/**
+ * Функция получения пакета и его обработки
+ */
 int
 tcp_recv(struct ip_pkt* pkt) {
     if (JNTOHS(pkt->hdr.ip_total_length) - IP_HEADER_LEN < TCP_HEADER_LEN) {

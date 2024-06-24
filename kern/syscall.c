@@ -474,7 +474,7 @@ sys_monitor(void) {
 static void
 sys_ethernet_loop(void) {
     struct AddressSpace *old = switch_address_space(&curenv->address_space);
-    (void)mon_eth_recv(&curenv->env_tf);
+    (void)mon_eth_recieve(&curenv->env_tf);
     switch_address_space(old);
 }
 
@@ -493,7 +493,11 @@ sys_region_refs(uintptr_t addr, size_t size, uintptr_t addr2, uintptr_t size2) {
 
     if (addr2 > MAX_USER_ADDRESS)
         return ref1;
+<<<<<<< HEAD
     else            
+=======
+    else
+>>>>>>> itask
         return ref1 - region_maxref(&curenv->address_space, addr2, size2);
     return 0;
 }

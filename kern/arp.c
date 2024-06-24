@@ -8,6 +8,9 @@
 
 static struct arp_cache_table arp_table[ARP_TABLE_MAX_SIZE];
 
+/**
+ * Перебирает ARP-таблицу в поисках следующего элемента.
+ */
 uint8_t *
 get_mac_by_ip(uint32_t ip) {
     struct arp_cache_table *entry;
@@ -20,7 +23,10 @@ get_mac_by_ip(uint32_t ip) {
     return NULL;
 }
 
-// хардкодим запись в арп таблицу об br0 интерфейсе
+/**
+ * Хардкодим запись в ARP-таблицу об br0 интерфейсе - мастере.
+ * А также подготавливаем слоты для других записей.
+*/
 void
 initialize_arp_table() {
     struct arp_cache_table *entry;
@@ -39,12 +45,17 @@ initialize_arp_table() {
     }
 }
 
+/**
+ * Обновляет ARP-таблицу по событию получения нового ARP-запроса (от нового абонента)
+ */
 int
 update_arp_table(struct arp_hdr *arp_header) {
-    struct arp_cache_table *entry;
     int i;
+    struct arp_cache_table *entry;
+
     for (i = 0; i < ARP_TABLE_MAX_SIZE; i++) {
         entry = &arp_table[i];
+        // если запись свободна, то запоминаем в неё нового абонента
         if (entry->state == FREE_STATE) {
             entry->source_ip = arp_header->source_ip;
             memcpy(entry->source_mac, arp_header->source_mac, 6);
@@ -60,15 +71,51 @@ update_arp_table(struct arp_hdr *arp_header) {
         }
     }
 
-    if (i == ARP_TABLE_MAX_SIZE) {
+    return 0;
+}
+
+/**
+ * Отсылает ARP-запрос, когда необходимо
+ */
+int
+arp_request(struct ip_pkt *reply_packet) {
+    if (trace_packet_processing) cprintf("Sending ARP-request\n");
+
+    struct eth_hdr ethernet_header;
+    struct arp_hdr arp_request;
+
+    uint8_t *jos_mac = get_mac_by_ip(MY_IP);
+
+    memcpy(ethernet_header.eth_source_mac, jos_mac, 6);
+    memset(ethernet_header.eth_destination_mac, 0, 6);
+    ethernet_header.eth_type = JHTONS(ETH_TYPE_ARP);
+
+    memcpy(arp_request.source_mac, jos_mac, 6);
+
+    arp_request.source_ip = reply_packet->hdr.ip_source_address;
+    // broadcast address must be here:
+    arp_request.target_ip = JHTONL(BROADCAST_IP);
+    arp_request.protocol_type = JNTOHS(ARP_IPV4);
+    arp_request.hardware_type = JNTOHS(ARP_ETHERNET);
+    arp_request.opcode = JNTOHS(ARP_REQUEST);
+
+    int status = eth_send(&ethernet_header, &arp_request, sizeof(struct arp_hdr));
+
+    if (status < 0) {
+        cprintf("Error attempting arp response.");
         return -1;
     }
     return 0;
 }
 
+/**
+ * Отвечаем на ARP-запрос, посылаем ARP-reply (ответ)
+ */
 int
 arp_reply(struct arp_hdr *arp_header) {
     if (trace_packet_processing) cprintf("Sending ARP reply\n");
+
+    struct eth_hdr ethernet_header;
 
     arp_header->opcode = ARP_REPLY;
     memcpy(arp_header->target_mac, arp_header->source_mac, 6);
@@ -80,11 +127,10 @@ arp_reply(struct arp_hdr *arp_header) {
     arp_header->hardware_type = JHTONS(arp_header->hardware_type);
     arp_header->protocol_type = JHTONS(arp_header->protocol_type);
 
-    struct eth_hdr reply_header;
-    memcpy(reply_header.eth_destination_mac, arp_header->target_mac, 6);
-    reply_header.eth_type = JHTONS(ETH_TYPE_ARP);
-    memcpy(reply_header.eth_destination_mac, get_mac_by_ip(arp_header->target_ip), 6);
-    int status = eth_send(&reply_header, arp_header, sizeof(struct arp_hdr));
+    memcpy(ethernet_header.eth_destination_mac, arp_header->target_mac, 6);
+    ethernet_header.eth_type = JHTONS(ETH_TYPE_ARP);
+
+    int status = eth_send(&ethernet_header, arp_header, sizeof(struct arp_hdr));
     if (status < 0) {
         cprintf("Error attempting arp response.");
         return -1;
@@ -93,7 +139,7 @@ arp_reply(struct arp_hdr *arp_header) {
 }
 
 int
-arp_resolve(void* data) {
+arp_resolve(void *data) {
     if (trace_packet_processing) cprintf("Resolving ARP\n");
     struct arp_hdr *arp_header;
 
@@ -101,8 +147,8 @@ arp_resolve(void* data) {
 
     arp_header->hardware_type = JNTOHS(arp_header->hardware_type);
     arp_header->protocol_type = JNTOHS(arp_header->protocol_type);
-    arp_header->opcode = JNTOHS(arp_header->opcode);
-    arp_header->target_ip = JNTOHL(arp_header->target_ip);
+    arp_header->opcode        = JNTOHS(arp_header->opcode);
+    arp_header->target_ip     = JNTOHL(arp_header->target_ip);
 
     if (arp_header->hardware_type != ARP_ETHERNET) {
         cprintf("Error! Only ethernet is supporting.");
@@ -115,14 +161,14 @@ arp_resolve(void* data) {
 
     int status = update_arp_table(arp_header);
     if (status < 0) {
-        cprintf("ARP table is filled in");
+        cprintf("ARP table already filled !\n");
     }
     if (arp_header->target_ip != MY_IP) {
-        cprintf("This is not for me!");
+        cprintf("Keep silence !\n");
         return -1;
     }
     if (arp_header->opcode != ARP_REQUEST) {
-        cprintf("Error! Only arp requests are supported");
+        cprintf("Keep silence !\n");
         return -1;
     }
 

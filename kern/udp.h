@@ -4,6 +4,9 @@
 #include <inc/types.h>
 #include <kern/ip.h>
 
+#define UDP_HEADER_LEN sizeof(struct udp_hdr)
+#define UDP_DATA_LENGTH (IP_DATA_LEN - UDP_HEADER_LEN)
+
 struct udp_hdr {
     uint16_t source_port;
     uint16_t destination_port;
@@ -11,8 +14,6 @@ struct udp_hdr {
     uint16_t checksum;
 } __attribute__((packed));
 
-#define UDP_HEADER_LEN sizeof(struct udp_hdr)
-#define UDP_DATA_LENGTH (IP_DATA_LEN - UDP_HEADER_LEN)
 
 struct udp_pkt {
     struct udp_hdr hdr;

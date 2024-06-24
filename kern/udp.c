@@ -4,6 +4,9 @@
 #include <inc/stdio.h>
 #include <kern/traceopt.h>
 
+/**
+ * Создаёт udp пакет и отправляет его
+ */
 int
 udp_send(void* data, int length) {
     if (trace_packet_processing) cprintf("Sending UDP packet\n");
@@ -25,19 +28,25 @@ udp_send(void* data, int length) {
     return ip_send(&result, length + sizeof(struct udp_hdr));
 }
 
+/**
+ * Обрабатывает входящий UDP-пакет и отправляет ответ. 
+ */
 int
 udp_recv(struct ip_pkt* pkt) {
     if (trace_packet_processing) cprintf("Processing UDP packet\n");
     struct udp_pkt upkt;
     int size = JNTOHS(pkt->hdr.ip_total_length) - IP_HEADER_LEN;
+
     memcpy((void*)&upkt, (void*)pkt->data, size);
+
     struct udp_hdr* hdr = &upkt.hdr;
 
     cprintf("port: %d\n", JNTOHS(hdr->destination_port));
     for (size_t i = 0; i < JNTOHS(hdr->length) - UDP_HEADER_LEN; i++) {
-        cprintf("%c", upkt.data[i]);
+        cprintf("%02x", upkt.data[i]);
     }
     cprintf("\n");
     udp_send(upkt.data, JNTOHS(hdr->length) - UDP_HEADER_LEN);
+
     return 0;
 }

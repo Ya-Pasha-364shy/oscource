@@ -16,32 +16,43 @@ struct rx_desc rx_desc_table[E1000_NU_DESC] __attribute__((aligned (PAGE_SIZE)))
 char tx_buf[E1000_NU_DESC][E1000_BUFFER_SIZE] __attribute__((aligned (PAGE_SIZE)));
 char rx_buf[E1000_NU_DESC][E1000_BUFFER_SIZE] __attribute__((aligned (PAGE_SIZE)));
 
-void
+static void
 dump_tx_desc(uint32_t tx_idx) {
-    cprintf("TX Desc %u:\n", tx_idx);
-    cprintf("\tbuf_addr: %lu\n", tx_desc_table[tx_idx].buf_addr);
-    cprintf("\tlength:   %u\n", tx_desc_table[tx_idx].length);
-    cprintf("\tcso:      %04x\n", tx_desc_table[tx_idx].cso);
-    cprintf("\tcmd:      %04x\n", tx_desc_table[tx_idx].cmd);
-    cprintf("\tstatus:   %04x\n", tx_desc_table[tx_idx].status);
-    cprintf("\tcss:      %04x\n", tx_desc_table[tx_idx].css);
-    cprintf("\tspecial:  %04x\n", tx_desc_table[tx_idx].special);
+    cprintf("TX Desc %08x:\n", tx_idx);
+    cprintf("\tbuf_addr: %08lx\n", tx_desc_table[tx_idx].buf_addr);
+    cprintf("\tlength:   %08x\n", tx_desc_table[tx_idx].length);
+    cprintf("\tstatus:   %08x\n", tx_desc_table[tx_idx].status);
     cprintf("\n");
 }
 
-void
+static void
 dump_rx_desc(uint32_t rx_idx) {
-    cprintf("RX Desc %u:\n", rx_idx);
-    cprintf("\tbuf_addr: %lu\n", rx_desc_table[rx_idx].buf_addr);
-    cprintf("\tlength:   %u\n", rx_desc_table[rx_idx].length);
-    cprintf("\tchecksum: %04x\n", rx_desc_table[rx_idx].checksum);
-    cprintf("\tstatus:   %04x\n", rx_desc_table[rx_idx].status);
-    cprintf("\terrors:   %04x\n", rx_desc_table[rx_idx].errors);
-    cprintf("\tspecial:  %04x\n", rx_desc_table[rx_idx].special);
+    cprintf("RX Desc %08x:\n", rx_idx);
+    cprintf("\tbuf_addr: %08lx\n", rx_desc_table[rx_idx].buf_addr);
+    cprintf("\tlength:   %08x\n", rx_desc_table[rx_idx].length);
+    cprintf("\tchecksum: %08x\n", rx_desc_table[rx_idx].checksum);
+    cprintf("\tstatus:   %08x\n", rx_desc_table[rx_idx].status);
+    cprintf("\terrors:   %08x\n", rx_desc_table[rx_idx].errors);
     cprintf("\n");
 }
 
-void
+static inline bool
+is_time_over(uint64_t *a, uint64_t *b, double *timeout) {
+    static uint64_t cpu_frequency;
+    if (!cpu_frequency) {
+        cpu_frequency = hpet_cpu_frequency();
+    }
+
+    asm("pause");
+    *b = read_tsc();
+
+    return (*b - *a < (uint64_t)(*timeout * cpu_frequency)) ? false : true;
+}
+
+/**
+ * Инициализирует очереди отправки для E1000
+ */
+static void
 e1000_transmit_init() {
     // Set TX Base Address Low
     E1000_REG(E1000_TDBAL) = (uint32_t)PADDR(tx_desc_table);
@@ -80,7 +91,10 @@ e1000_transmit_init() {
     if (trace_packets) dump_tx_desc(0);
 }
 
-void
+/**
+ * Инициализирует очереди принятия пакетов на E1000
+ */
+static void
 e1000_receive_init() {
     // Set RX Base Address Low
     E1000_REG(E1000_RDBAL) = PADDR(rx_desc_table);
@@ -111,8 +125,12 @@ e1000_receive_init() {
     if (trace_packets) dump_rx_desc(0);
 }
 
+/**
+ * Функция сопоставления pci-устройства и e1000.
+ * Нужна для мапинга регистров устройства (сетевой карты) в память ядра.
+ */
 int
-e1000_attach(struct pci_func * pciFunction) {
+e1000_attach(struct pci_func *pciFunction) {
     // Get phy_mmio address and size
     pci_get_bar_info(pciFunction);
 
@@ -141,6 +159,10 @@ e1000_attach(struct pci_func * pciFunction) {
     return 1;
 }
 
+/**
+ * Помещаем в очередь отправки e1000 пакет размером len
+ * Если очередь отправки полна - возвращаем отрицательное число
+ */
 int
 e1000_transmit(const char* buf, uint16_t len) {
     // Trunk packet length
@@ -172,7 +194,32 @@ e1000_transmit(const char* buf, uint16_t len) {
     return 0;
 }
 
+/**
+ * Ожидаем освобождение слота под пакет в какой-либо очереди отправки на сетевой карте.
+ * Если место есть, возвращаем индекс очереди, что освободилась.
+ */
 int
+e1000_timeout_transmit(double timeout) {
+    uint64_t tsc0 = read_tsc(), tsc1 = 0;
+    do {
+        // Tail TX Descriptor Index
+        uint32_t tail_tx = E1000_REG(E1000_TDT);
+        tail_tx = (tail_tx + 1) % E1000_NU_DESC;
+
+        // Check status of tail TX Descriptor
+        if (rx_desc_table[tail_tx].status & E1000_TXD_STAT_DD) {
+            return 0;
+        }
+    } while (!is_time_over(&tsc0, &tsc1, &timeout));
+
+    // if (trace_packets) cprintf("transmit TIMEOUT! (%d ms)\n", (uint32_t)(timeout * 1000));
+    return -1;
+}
+
+/**
+ * Ждём бесконечно события, пока на карте не появятся данные.
+ */
+void
 e1000_listen(void) {
     while (1) {
         uint32_t tail_rx = E1000_REG(E1000_RDT);
@@ -183,16 +230,16 @@ e1000_listen(void) {
             break;
         }
     }
-    return 0;
 }
 
+/**
+ * Ждём в течение времени timeout события появления новых данных в какой-либо очереди.
+ * Если появились - вернуть 0, иначе = -1
+ */
 int
 e1000_timeout_listen(double timeout) {
-    static uint64_t cpu_freq = 0;
-    if (!cpu_freq) {
-        cpu_freq = hpet_cpu_frequency();
-    }
-    uint64_t tsc0 = read_tsc(), tsc1;
+    uint64_t tsc0 = read_tsc(), tsc1 = 0;
+
     do {
         uint32_t tail_rx = E1000_REG(E1000_RDT);
         tail_rx = (tail_rx + 1) % E1000_NU_DESC;
@@ -201,16 +248,18 @@ e1000_timeout_listen(double timeout) {
         if (rx_desc_table[tail_rx].status & E1000_RXD_STAT_DD) {
             return 0;
         }
+    } while (!is_time_over(&tsc0, &tsc1, &timeout));
 
-        asm("pause");
-        tsc1 = read_tsc();
-    } while (tsc1 - tsc0 < timeout * cpu_freq);
-    cprintf("TIMEOUT! (%d ms)\n", (uint32_t)(timeout * 1000));
+    // if (trace_packets) cprintf("recieve TIMEOUT! (%d ms)\n", (uint32_t)(timeout * 1000));
     return -1;
 }
 
+/**
+ * Читаем из входящей очереди и записываем последний прочитанный элемент
+ * в память, на которую указывает указатель buffer.
+ */
 int
-e1000_receive(char* buffer) {
+e1000_receive(char *buffer) {
     // Tail RX Descriptor Index
     uint32_t tail_rx = E1000_REG(E1000_RDT);
     tail_rx = (tail_rx + 1) % E1000_NU_DESC;

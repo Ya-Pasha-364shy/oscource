@@ -169,7 +169,7 @@ pci_scan_bus(struct pci_bus *bus) {
             if (pci_show_devs)
                 pci_print_func(&af);
 
-            // attach function to pci device, that following structure af 
+            // attach function to pci device, that following structure af
             pci_attach(&af);
         }
     }

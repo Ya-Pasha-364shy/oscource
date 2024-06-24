@@ -33,9 +33,11 @@ struct arp_cache_table {
 #define STATIC_STATE 1
 #define DYNAMIC_STATE 2
 
-int arp_resolve(void* data);
+int arp_resolve(void *data);
 int arp_reply(struct arp_hdr *arp_header);
-uint8_t * get_mac_by_ip(uint32_t ip);
+uint8_t *get_mac_by_ip(uint32_t ip);
 void initialize_arp_table();
+
+int arp_request(struct ip_pkt *reply_packet);
 
 #endif
