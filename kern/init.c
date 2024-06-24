@@ -168,24 +168,26 @@ i386_init(void) {
 
 #ifdef CONFIG_KSPACE
     /* Touch all you want */
-    ENV_CREATE_KERNEL_TYPE(prog_test1);
-    ENV_CREATE_KERNEL_TYPE(prog_test2);
-    ENV_CREATE_KERNEL_TYPE(prog_test3);
-    ENV_CREATE_KERNEL_TYPE(prog_test4);
-    ENV_CREATE_KERNEL_TYPE(prog_test5);
-    ENV_CREATE_KERNEL_TYPE(prog_test6);
+    ENV_CREATE_KERNEL_TYPE(prog_test1, false);
+    ENV_CREATE_KERNEL_TYPE(prog_test2, false);
+    ENV_CREATE_KERNEL_TYPE(prog_test3, false);
+    ENV_CREATE_KERNEL_TYPE(prog_test4, false);
+    ENV_CREATE_KERNEL_TYPE(prog_test5, false);
+    ENV_CREATE_KERNEL_TYPE(prog_test6, false);
+    cprintf("HERE - CONFIG_KSPACE !\n");
 #else
 
 #if LAB >= 10
-    ENV_CREATE(fs_fs, ENV_TYPE_FS);
+    ENV_CREATE(fs_fs, ENV_TYPE_FS, true);
 #endif
 
 #if defined(TEST)
     /* Don't touch -- used by grading script! */
-    ENV_CREATE(TEST, ENV_TYPE_USER);
+    ENV_CREATE(TEST, ENV_TYPE_USER, false);
 #else
     /* Touch all you want. */
-    ENV_CREATE(user_icode, ENV_TYPE_USER);
+    ENV_CREATE(user_icode, ENV_TYPE_USER, false);
+    ENV_CREATE(user_ethernet_loop, ENV_TYPE_KERNEL, true);
 #endif /* TEST* */
 #endif
 

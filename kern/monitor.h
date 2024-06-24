@@ -10,5 +10,6 @@ struct Trapframe;
  * optionally providing a trap frame indicating the current state
  * (NULL if none) */
 void monitor(struct Trapframe *tf);
+int mon_eth_recv(struct Trapframe *tf);
 
 #endif /* !JOS_KERN_MONITOR_H */

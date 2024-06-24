@@ -17,6 +17,7 @@
 #include <kern/env.h>
 #include <kern/pmap.h>
 #include <kern/trap.h>
+#include <kern/sched.h>
 
 #include <kern/ip.h>
 #include <kern/inet.h>
@@ -32,6 +33,8 @@
 #define MAXARGS    16
 
 /* Functions implementing monitor commands */
+int mon_exit(int argc, char **argv, struct Trapframe *tf);
+
 int mon_help(int argc, char **argv, struct Trapframe *tf);
 int mon_kerninfo(int argc, char **argv, struct Trapframe *tf);
 int mon_echo(int argc, char **argv, struct Trapframe *tf);
@@ -45,7 +48,6 @@ int mon_pagetable(int argc, char **argv, struct Trapframe *tf);
 int mon_virt(int argc, char **argv, struct Trapframe *tf);
 
 int mon_e1000_recv(int argc, char **argv, struct Trapframe *tf);
-int mon_eth_recv(int argc, char **argv, struct Trapframe *tf);
 int mon_e1000_tran(int argc, char **argv, struct Trapframe *tf);
 int mon_http_test(int argc, char **argv, struct Trapframe *tf);
 
@@ -69,9 +71,9 @@ static struct Command commands[] = {
         {"pagetable", "Display current page table", mon_pagetable},
         {"virt", "Display virtual memory tree", mon_virt},
         {"e1000_recv", "Test e1000 receive", mon_e1000_recv},
-        {"eth_recv", "Test eth receive", mon_eth_recv},
         {"e1000_tran", "Test e1000 transmit", mon_e1000_tran},
-        {"http_test", "Test http parsing", mon_http_test}
+        {"http_test", "Test http parsing", mon_http_test},
+        {"exit", "Normal exit from monitor", mon_exit},
 };
 
 #define NCOMMANDS (sizeof(commands) / sizeof(commands[0]))
@@ -238,12 +240,32 @@ mon_e1000_recv(int argc, char **argv, struct Trapframe *tf) {
     return 0;
 }
 
+static inline bool
+is_time_over(uint64_t *a, uint64_t *b, uint64_t *timeout) {
+    static uint64_t cpu_frequency;
+    if (!cpu_frequency) {
+        cpu_frequency = hpet_cpu_frequency();
+    }
+
+    asm("pause");
+    *b = read_tsc();
+
+    return (*b - *a < *timeout * cpu_frequency) ? false : true;
+}
+
 int
-mon_eth_recv(int argc, char **argv, struct Trapframe *tf) {
-    while (1) {
-        char buf[1000];
+mon_eth_recv(struct Trapframe *tf) {
+
+    int len = 0;
+    uint64_t tsc0 = read_tsc(), tsc1 = 0;
+    uint64_t timeout = 30;
+    char buf[1000];
+
+    do {
+        memset(buf, 0, sizeof(buf));
+
         e1000_listen();
-        int len = eth_recv(buf);
+        len = eth_recv(buf);
         if (trace_packets && len >= 0) {
             cprintf("received len: %d\n", len);
             if (len > 0) {
@@ -252,15 +274,15 @@ mon_eth_recv(int argc, char **argv, struct Trapframe *tf) {
                     cprintf("%x ", buf[i] & 0xff);
                 }
                 cprintf("\n");
-            } else {
-                break;
             }
         } else {
             cprintf("received status: %s%s\n", (len >= 0) ? "OK" : "ERROR", (len == 0) ? " EMPTY" : " ");
         }
         cprintf("\n");
-    }
-    return 0;
+
+    } while (!is_time_over(&tsc0, &tsc1, &timeout));
+
+    sched_yield();
 }
 
 int
@@ -293,6 +315,12 @@ mon_http_test(int argc, char **argv, struct Trapframe *tf) {
     cprintf("%s\n", http_parse(buf4, strlen(buf4), reply, &reply_len) ? "FAULT" : "SUCCESS");
     udp_send(reply, reply_len);
     return 0;
+}
+
+int
+mon_exit(int argc, char **argv, struct Trapframe *tf) {
+    cprintf("\nBye !\n\n");
+    return -1;
 }
 
 /* Kernel monitor command interpreter */
@@ -341,5 +369,5 @@ monitor(struct Trapframe *tf) {
 
     char *buf;
     do buf = readline("K> ");
-    while (!buf || runcmd(buf, tf) >= 0);
+    while (runcmd(buf, tf) >= 0);
 }

@@ -160,3 +160,8 @@ void
 sys_monitor(void) {
     syscall(SYS_monitor, 0, 0, 0, 0, 0, 0, 0);
 }
+
+void
+sys_ethernet_loop(void) {
+    syscall(SYS_ethernet_loop, 0, 0, 0, 0, 0, 0, 0);
+}

@@ -21,6 +21,7 @@ enum {
     SYS_ipc_recv,
     SYS_gettime,
     SYS_monitor,
+    SYS_ethernet_loop,
     NSYSCALLS
 };
 

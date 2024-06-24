@@ -467,7 +467,14 @@ sys_gettime(void) {
 static void
 sys_monitor(void) {
     struct AddressSpace *old = switch_address_space(&curenv->address_space);
-    monitor(&(curenv->env_tf));
+    monitor(&curenv->env_tf);
+    switch_address_space(old);
+}
+
+static void
+sys_ethernet_loop(void) {
+    struct AddressSpace *old = switch_address_space(&curenv->address_space);
+    (void)mon_eth_recv(&curenv->env_tf);
     switch_address_space(old);
 }
 
@@ -486,7 +493,7 @@ sys_region_refs(uintptr_t addr, size_t size, uintptr_t addr2, uintptr_t size2) {
 
     if (addr2 > MAX_USER_ADDRESS)
         return ref1;
-    else 
+    else
         return ref1 - region_maxref(&curenv->address_space, addr2, size2);
     return 0;
 }
@@ -560,8 +567,10 @@ syscall(uintptr_t syscallno, uintptr_t a1, uintptr_t a2, uintptr_t a3, uintptr_t
             return (uintptr_t) sys_gettime();
         
         case SYS_monitor:
-            sys_monitor();
-            return 0;
+            sys_monitor(); return 0;
+
+        case SYS_ethernet_loop:
+            sys_ethernet_loop(); return 0;
 
         default:
             return -E_NO_SYS;

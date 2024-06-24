@@ -9,11 +9,7 @@
 #define pci_show_devs  1
 #define pci_show_addrs 0
 
-//
-// The default mechanism for performing PCI Configuration cycles is to
-// use the I/O ports at 0xCF8 and 0xCFC.  This is only used for IA-32.
-// IPF uses SAL calls to perform PCI COnfiguration cycles
-//
+// PCI "configuration mechanism one"
 #define PCI_CONFIGURATION_ADDRESS_PORT (uint32_t)0xCF8
 #define PCI_CONFIGURATION_DATA_PORT    (uint32_t)0xCFC
 
@@ -72,6 +68,8 @@ pci_conf_write(struct pci_func *f, uint32_t off, uint32_t v) {
 }
 
 
+// list - pci_attach_class OR pci_attach_vendor
+// pcif - a structure describing a device on a pci bus
 static int
 pci_attach_match(uint32_t key1, uint32_t key2,
                  struct pci_driver *list, struct pci_func *pcif) {
@@ -82,7 +80,7 @@ pci_attach_match(uint32_t key1, uint32_t key2,
     // the devices we are interested in
     for (i = 0; list[i].attachfn; i++) {
         if (list[i].key1 == key1 && list[i].key2 == key2) {
-            // call device attach function
+            // call device attach function -- e1000_attach or pci_attach_vendor
             int r = list[i].attachfn(pcif);
             if (r > 0)
                 return r;
@@ -95,7 +93,7 @@ pci_attach_match(uint32_t key1, uint32_t key2,
 
 // we call the attach function depending
 // either on the class and subclass of the
-// device or depending on the specific model
+// device depending on the specific model
 static int
 pci_attach(struct pci_func *f) {
     return pci_attach_match(PCI_CLASS(f->dev_class),
@@ -170,6 +168,8 @@ pci_scan_bus(struct pci_bus *bus) {
             af.dev_class = pci_conf_read(&af, PCI_CLASS_REG);
             if (pci_show_devs)
                 pci_print_func(&af);
+
+            // attach function to pci device, that following structure af
             pci_attach(&af);
         }
     }
