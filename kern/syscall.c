@@ -493,11 +493,7 @@ sys_region_refs(uintptr_t addr, size_t size, uintptr_t addr2, uintptr_t size2) {
 
     if (addr2 > MAX_USER_ADDRESS)
         return ref1;
-<<<<<<< HEAD
-    else            
-=======
     else
->>>>>>> itask
         return ref1 - region_maxref(&curenv->address_space, addr2, size2);
     return 0;
 }
